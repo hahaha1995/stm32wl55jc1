@@ -1,0 +1,49 @@
+{
+    "configurations": [
+        {
+            "name": "STM32WL55JC1-CM4",
+            "includePath": [
+                "${workspaceFolder}/**"
+            ],
+            "defines": [
+                "_DEBUG",
+                "UNICODE",
+                "_UNICODE",
+                "CORE_CM4",
+                "STM32WL55xx",
+                "USE_HAL_DRIVER",
+                "USE_FULL_LL_DRIVER",
+                "NDEBUG",
+                "RT_DEBUG",
+                "USE_FULL_ASSERT"
+            ],
+            "cStandard": "${default}",
+            "cppStandard": "${default}",
+            "intelliSenseMode": "windows-gcc-arm64",
+            "compilerPath": "${ST_GNU_TOOLS}/arm-none-eabi-gcc.exe"
+        },
+        {
+            "name": "STM32WL55JC1-CM0PLUS",
+            "includePath": [
+                "${workspaceFolder}/**"
+            ],
+            "defines": [
+                "_DEBUG",
+                "UNICODE",
+                "_UNICODE",
+                "CORE_CM0PLUS",
+                "STM32WL55xx",
+                "USE_HAL_DRIVER",
+                "USE_FULL_LL_DRIVER",
+                "NDEBUG",
+                "RT_DEBUG",
+                "USE_FULL_ASSERT"
+            ],
+            "cStandard": "${default}",
+            "cppStandard": "${default}",
+            "intelliSenseMode": "windows-gcc-arm64",
+            "compilerPath": "${ST_GNU_TOOLS}/arm-none-eabi-gcc.exe"
+        }
+    ],
+    "version": 4
+}

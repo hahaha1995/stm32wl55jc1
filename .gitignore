@@ -1,0 +1,27 @@
+# 编译输出文件夹 build/
+Debug/
+Release/
+*.elf
+*.bin
+*.hex
+*.map
+*.lst
+*.o
+*.d
+*.su
+
+# VS Code 配置文件 (可选，通常建议保留 launch.json 和 tasks.json，忽略个人的)
+.vscode/*
+!.vscode/launch.json
+!.vscode/tasks.json
+!.vscode/c_cpp_properties.json
+!.vscode/settings.json
+
+# 系统临时文件
+Thumbs.db
+.DS_Store
+
+# 如果你不使用 STM32CubeIDE 的工程文件，可以忽略它们，或者保留
+#.cproject
+#.project
+#.settings/
