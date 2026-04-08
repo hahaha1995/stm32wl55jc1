@@ -1,0 +1,13 @@
+# Normalize line endings for all text files to LF in the repository
+* text=auto eol=lf
+
+# Explicitly declare binary files to prevent corruption
+*.bin binary
+*.hex binary
+*.elf binary
+*.o   binary
+*.a   binary
+*.lib binary
+
+# STM32CubeIDE / IAR project files (keep CRLF on Windows)
+*.ioc text eol=lf
