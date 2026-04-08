@@ -70,7 +70,8 @@ C_SOURCES =  \
 ../../Middlewares/Third_Party/FreeRTOS/Source/portable/GCC/ARM_CM3/port.c \
 ../../CM4/Core/Src/sysmem.c \
 ../../CM4/Core/Src/syscalls.c \
-../../Drivers/BSP/STM32WLxx_Nucleo/stm32wlxx_nucleo.c
+../../Drivers/BSP/STM32WLxx_Nucleo/stm32wlxx_nucleo.c \
+../../Drivers/User/SSD1315/Src/ssd1315.c \
 
 # ASM sources
 ASM_SOURCES =  \
@@ -143,7 +144,8 @@ C_INCLUDES =  \
 -I../../Drivers/CMSIS/RTOS2/Include \
 -I../../Drivers/CMSIS/Device/ST/STM32WLxx/Include \
 -I../../Drivers/CMSIS/Include \
--I../../Drivers/BSP/STM32WLxx_Nucleo
+-I../../Drivers/BSP/STM32WLxx_Nucleo \
+-I../../Drivers/User/SSD1315/Inc
 
 
 # compile gcc flags
