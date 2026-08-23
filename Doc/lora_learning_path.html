@@ -1,0 +1,660 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LoRa 学习路径 · 入网与时间同步可视化</title>
+<style>
+  :root {
+    --bg: #0f1420; --panel: #171e30; --panel2: #1e2740;
+    --line: #2c3a5e; --text: #dbe4ff; --muted: #8493b8;
+    --cyan: #35d0ff; --green: #4ade80; --amber: #fbbf24;
+    --red: #f87171; --purple: #a78bfa; --pink: #f472b6;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: radial-gradient(1200px 700px at 20% -10%, #1a2440 0%, var(--bg) 60%);
+    color: var(--text); font-family: "Segoe UI", "Microsoft YaHei", system-ui, sans-serif;
+    min-height: 100vh; padding: 24px 20px 48px;
+  }
+  .wrap { max-width: 1240px; margin: 0 auto; }
+  header { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+  h1 { font-size: 26px; font-weight: 700; letter-spacing: .5px; }
+  h1 .tag { color: var(--amber); }
+  p.sub { color: var(--muted); margin-top: 6px; font-size: 14px; }
+  .controls {
+    display: flex; gap: 8px; align-items: center; background: var(--panel);
+    border: 1px solid var(--line); border-radius: 12px; padding: 8px 10px;
+  }
+  button {
+    background: var(--panel2); color: var(--text); border: 1px solid var(--line);
+    border-radius: 8px; padding: 7px 13px; font-size: 13px; cursor: pointer; transition: .15s;
+  }
+  button:hover:not(:disabled) { border-color: var(--amber); color: var(--amber); }
+  button:disabled { opacity: .35; cursor: not-allowed; }
+  button.primary { background: #3a2e10; border-color: var(--amber); color: var(--amber); font-weight: 600; }
+  .stepInfo {
+    display: flex; align-items: center; gap: 10px; margin: 14px 0;
+    background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 10px 14px;
+  }
+  .stepBadge {
+    min-width: 86px; text-align: center; background: #3a2e10; color: var(--amber);
+    border: 1px solid var(--amber); border-radius: 999px; padding: 3px 10px; font-size: 12px; font-weight: 700;
+  }
+  .stepText { font-size: 15px; font-weight: 600; }
+  .cards {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 14px; margin-top: 18px;
+  }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px; }
+  .card h3 { font-size: 14px; color: var(--amber); margin-bottom: 8px; }
+  .card ul { list-style: none; }
+  .card li { font-size: 13px; color: var(--muted); line-height: 1.7; padding-left: 14px; position: relative; }
+  .card li::before { content: "▸"; position: absolute; left: 0; color: var(--amber); }
+  .card li b { color: var(--text); }
+  canvas { width: 100%; display: block; border-radius: 14px; }
+  .legend { display: flex; gap: 18px; flex-wrap: wrap; margin-top: 10px; font-size: 12px; color: var(--muted); }
+  .legend span { display: inline-flex; align-items: center; gap: 6px; }
+  .dot { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
+  .planTitle { font-size: 20px; margin: 26px 0 12px; color: var(--text); }
+  .planTitle small { font-size: 13px; color: var(--muted); font-weight: 400; margin-left: 10px; }
+  table.plan {
+    width: 100%; border-collapse: collapse; background: var(--panel);
+    border: 1px solid var(--line); border-radius: 14px; overflow: hidden;
+    box-shadow: 0 6px 24px rgba(0,0,0,.25);
+  }
+  table.plan th {
+    background: var(--panel2); color: var(--amber); font-size: 13px; text-align: left;
+    padding: 10px 14px; border-bottom: 1px solid var(--line); letter-spacing: .3px;
+  }
+  table.plan td {
+    padding: 10px 14px; font-size: 13px; color: var(--muted);
+    border-bottom: 1px solid rgba(44,58,94,.5); vertical-align: top; line-height: 1.65;
+  }
+  table.plan td b { color: var(--text); }
+  table.plan tr:last-child td { border-bottom: none; }
+  table.plan td.no { color: var(--cyan); font-weight: 700; white-space: nowrap; }
+  table.plan td.goal { color: var(--cyan); font-weight: 600; }
+  table.plan td.icon { font-size: 16px; }
+  .secTitle { font-size: 20px; margin: 26px 0 12px; color: var(--text); }
+  .secTitle small { font-size: 13px; color: var(--muted); font-weight: 400; margin-left: 10px; }
+  .secSub { font-size: 14px; color: var(--cyan); margin: 18px 0 8px; }
+  .steps { display: grid; grid-template-columns: repeat(auto-fit, minmax(225px, 1fr)); gap: 12px; margin: 14px 0; }
+  .stepBox {
+    background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px;
+  }
+  .stepBox .num {
+    display: inline-flex; width: 22px; height: 22px; align-items: center; justify-content: center;
+    background: #3a2e10; color: var(--amber); border: 1px solid var(--amber);
+    border-radius: 50%; font-size: 12px; font-weight: 700; margin-right: 8px;
+  }
+  .stepBox b { color: var(--text); }
+  .stepBox p { font-size: 12.5px; color: var(--muted); margin-top: 8px; line-height: 1.6; }
+  pre.code {
+    background: #0b0f1a; border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px;
+    font-size: 12.5px; color: #a8f0c0; overflow-x: auto; margin: 10px 0; line-height: 1.55;
+    font-family: Consolas, "Courier New", monospace;
+  }
+  pre.code .cm { color: #5b6c94; }
+  pre.code .hl { color: var(--amber); }
+  .warn {
+    background: rgba(251,191,36,.08); border: 1px solid rgba(251,191,36,.35);
+    border-radius: 10px; padding: 10px 14px; font-size: 13px; color: #fde68a;
+    margin: 12px 0; line-height: 1.7;
+  }
+  .warn b { color: #fde68a; }
+  details.sec {
+    margin: 26px 0 0; background: var(--panel); border: 1px solid var(--line);
+    border-radius: 14px; overflow: hidden; box-shadow: 0 6px 24px rgba(0,0,0,.25);
+  }
+  details.sec summary {
+    cursor: pointer; padding: 15px 18px; font-size: 18px; font-weight: 700; color: var(--text);
+    list-style: none; display: flex; align-items: center; gap: 10px; user-select: none; outline: none;
+  }
+  details.sec summary::-webkit-details-marker { display: none; }
+  details.sec summary::before { content: "▸"; color: var(--amber); font-size: 15px; transition: transform .18s; }
+  details.sec[open] summary::before { transform: rotate(90deg); }
+  details.sec summary:hover { background: rgba(30,39,64,.6); }
+  details.sec summary small { font-size: 13px; color: var(--muted); font-weight: 400; }
+  details.sec summary .hint {
+    margin-left: auto; font-size: 12px; color: var(--amber); white-space: nowrap;
+    border: 1px solid var(--amber); border-radius: 999px; padding: 2px 10px;
+  }
+  details.sec[open] summary .hint { color: #4a3c10; border-color: #4a3c10; }
+  details.sec .secBody { padding: 4px 18px 18px; }
+  details.sec .secBody table.plan { box-shadow: none; }
+  details.sec .secBody .warn { margin-top: 14px; }
+  @media (max-width: 720px) { .controls { width: 100%; justify-content: center; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <h1><span class="tag">LoRa</span> 学习路径 · 入网与时间同步</h1>
+      <p class="sub">NUCLEO-WL55JC1 · STM32CubeWL LoRaWAN_End_Node · TTN · US915（实验室网关）</p>
+    </div>
+    <div class="controls">
+      <button id="btnPrev">◀ 上一步</button>
+      <button id="btnPlay" class="primary">▶ 播放</button>
+      <button id="btnNext">下一步 ▶</button>
+    </div>
+  </header>
+
+  <div class="stepInfo">
+    <span class="stepBadge" id="stepBadge">STEP 0 / 11</span>
+    <span class="stepText" id="stepText">总览：协议分层 → OTAA 入网 → 时间同步 → 5 步实操</span>
+  </div>
+
+  <canvas id="cv"></canvas>
+
+  <div class="legend">
+    <span><i class="dot" style="background:var(--cyan)"></i> 协议分层（物理/MAC/应用）</span>
+    <span><i class="dot" style="background:var(--green)"></i> OTAA 入网时序</span>
+    <span><i class="dot" style="background:var(--purple)"></i> 时间同步（DeviceTime / Beacon）</span>
+    <span><i class="dot" style="background:var(--amber)"></i> 实操步骤（左侧路径）</span>
+  </div>
+
+  <details class="sec">
+    <summary><span>A · 学习目标 × 步骤汇总</span><small>8 个目标 → 动作 → 材料 → 验收标准</small><span class="hint">点击展开</span></summary>
+    <div class="secBody">
+  <table class="plan">
+    <thead>
+      <tr>
+        <th style="width:70px">#</th>
+        <th style="width:200px">学习目标</th>
+        <th>对应步骤（怎么做）</th>
+        <th style="width:230px">工具 / 材料</th>
+        <th style="width:240px">验证标准（做到什么算完成）</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td class="no">1</td>
+        <td class="goal">分清 LoRa 与 LoRaWAN</td>
+        <td>读 STM32WL 手册 LoRa 章节；看 STM32CubeWL 目录结构，区分<b>物理层</b>(SX126x/CSS 调制)与 <b>MAC 层</b>(协议栈)</td>
+        <td>RM0461 参考手册 + STM32CubeWL 包</td>
+        <td>能明确说出：<b>入网、时间同步属于 MAC 层</b>，与调制参数无关</td>
+      </tr>
+      <tr>
+        <td class="no">2</td>
+        <td class="goal">准备环境（US915）</td>
+        <td>安装 STM32CubeWL；TTN 注册应用并选 <b>US915</b>；网关接入网络</td>
+        <td>STM32CubeIDE + TTN 账号 + <b>US915 网关</b></td>
+        <td>TTN 控制台 Gateway 显示 <b>online</b>，应用出现 Join 入口</td>
+      </tr>
+      <tr>
+        <td class="no">3</td>
+        <td class="goal">跑通 OTAA 入网</td>
+        <td>工程选 <b>LORAMAC_REGION_US915</b>；<b>双核烧录</b>(CM4 协议栈 + CM0+ RF 固件)；`AT+JOIN=1`；确认 <b>子带匹配</b>(网关监听通道=设备 join 子带)</td>
+        <td>LoRaWAN_End_Node 示例 + 双核烧录工具</td>
+        <td>串口日志出现 <b>JOINED</b>，TTN 出现 Join 事件，设备获得 DevAddr</td>
+      </tr>
+      <tr>
+        <td class="no">4</td>
+        <td class="goal">看懂上下行帧结构</td>
+        <td>`AT+SEND=1:12:HELLO` 上行；对照抓包/TTN 数据，逐字段分析 <b>MHDR / DevAddr / FCnt / FPort / MIC</b></td>
+        <td>TTN Live data / 串口抓包</td>
+        <td>能<b>逐字节解释</b>一帧上行数据与对应下行的含义</td>
+      </tr>
+      <tr>
+        <td class="no">5</td>
+        <td class="goal">时间同步 - Class A</td>
+        <td>开启 <b>DeviceTimeReq/Ans</b>（TS002）；设备周期带上行请求时间</td>
+        <td>TTN/ChirpStack 时间同步配置</td>
+        <td>日志出现 DeviceTimeAns 回包，本地 RTC 被校准（含漂移补偿）</td>
+      </tr>
+      <tr>
+        <td class="no">6</td>
+        <td class="goal">时间同步 - Class B</td>
+        <td>`AT+CLASS=2`：进入 Class B，监听<b>每 128s 的 Beacon</b> 并校准</td>
+        <td>ClassB 示例 + 网关 Beacon 支持</td>
+        <td>日志显示 Beacon 同步成功，PingSlot 能按时收到下行</td>
+      </tr>
+      <tr>
+        <td class="no">7</td>
+        <td class="goal">读懂状态机源码</td>
+        <td>读 <b>LoRaMac.c</b>(Join 状态机)、<b>LoRaMacCrypto.c</b>(密钥派生)、<b>LoRaMacClassB.c</b>(Beacon)</td>
+        <td>Middlewares/LoRaWAN 源码</td>
+        <td>能<b>口述</b>:JoinRequest→JoinAccept→密钥派生的全过程与状态转移</td>
+      </tr>
+      <tr>
+        <td class="no">8</td>
+        <td class="goal">迁移到自己的工程</td>
+        <td>把 LoRaWAN 中间件移植进当前 FreeRTOS+shell 工程；把 <b>AT 命令换成 shell 命令</b>(join/send/time/class)</td>
+        <td>当前工程 + 移植指南</td>
+        <td>自己的固件完成<b>入网 + 上下行 + 时间同步</b>,shell 可交互控制</td>
+      </tr>
+    </tbody>
+  </table>
+    </div>
+  </details>
+
+  <details class="sec">
+    <summary><span>B · 关键概念速查</span><small>OTAA 三步 / 两种时间同步 / 双核架构 / US915 要点</small><span class="hint">点击展开</span></summary>
+    <div class="secBody">
+  <div class="cards">
+    <div class="card">
+      <h3>OTAA 入网三步</h3>
+      <ul>
+        <li><b>① JoinRequest</b>：带上 DevEUI/AppEUI + MIC(AppKey 派生)</li>
+        <li><b>② JoinAccept</b>：服务器下发加密帧，含 DevAddr</li>
+        <li><b>③ 派生密钥</b>：本地算出 NwkSKey/AppSKey，开始上行</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>两种时间同步</h3>
+      <ul>
+        <li><b>DeviceTimeReq/Ans</b>：Class A 零星请求（1.0.4+ / TS002）</li>
+        <li><b>Class B Beacon</b>：服务器每 128s 广播，设备周期性校时</li>
+        <li>Class B 的定时接收(PingSlot)依赖 Beacon 校准</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>双核架构（关键）</h3>
+      <ul>
+        <li><b>CM4</b>：跑 LoRaWAN 协议栈 + 应用（LoRaMac.c 等）</li>
+        <li><b>CM0+</b>：跑 ST 官方 RF 固件（SX126x 底层）</li>
+        <li>两块固件都要烧，通过 <b>IPCC/SHCI</b> 协作</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>US915 与实验室网关配合要点</h3>
+      <ul>
+        <li>区域宏 <b>LORAMAC_REGION_US915</b>（902–928 MHz，8×125k 子带 + 8×500k）</li>
+        <li>Join 前确认<b>网关监听通道</b>与设备子带一致（常见 sub-band 1/2）</li>
+        <li>TTN/ChirpStack 应用选择 <b>US915</b>；上行 DR0–DR5、下行 DR8–DR13</li>
+        <li>⚠️ 902–928 MHz 在中国属非授权频段，仅限实验室合规环境使用</li>
+      </ul>
+    </div>
+  </div>
+    </div>
+  </details>
+
+  <details class="sec">
+    <summary><span>C · AppEUI / AppKey 获取与使用</span><small>三个 ID 从 TTN 拿 → 写进固件 → 与网关无关</small><span class="hint">点击展开</span></summary>
+    <div class="secBody">
+
+  <table class="plan">
+    <thead>
+      <tr>
+        <th style="width:150px">ID</th>
+        <th style="width:70px">长度</th>
+        <th style="width:140px">谁生成</th>
+        <th>作用 / 注意</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td class="goal">DevEUI</td>
+        <td>8 字节</td>
+        <td>TTN 生成(或设备出厂 ID)</td>
+        <td>标识"这台设备"；固件中 <b>AT+DEVEUI</b> 查看/设置</td>
+      </tr>
+      <tr>
+        <td class="goal">AppEUI (JoinEUI)</td>
+        <td>8 字节</td>
+        <td>TTN 生成(或自己指定)</td>
+        <td>标识"加入哪个应用"；必须与固件 <b>AT+APPEUI</b> 一致</td>
+      </tr>
+      <tr>
+        <td class="goal">AppKey</td>
+        <td>16 字节</td>
+        <td>TTN 生成(或自己指定)</td>
+        <td><b>根密钥</b>：派生 NwkSKey/AppSKey、校验 MIC；抄错一个字符就永远 JOIN 不上</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="secSub">① TTN 控制台获取步骤</div>
+  <div class="steps">
+    <div class="stepBox"><span class="num">1</span><b>登录 TTN</b><p>console.thethings.network，选区域 cluster(如 EU1 / AU1)</p></div>
+    <div class="stepBox"><span class="num">2</span><b>创建应用</b><p>Applications → Create application(填 Application ID)</p></div>
+    <div class="stepBox"><span class="num">3</span><b>添加设备</b><p>End devices → Add end device → <b>Frequency plan: US 915</b>(与网关一致)</p></div>
+    <div class="stepBox"><span class="num">4</span><b>生成三件套</b><p>LoRaWAN version 1.0.4；JoinEUI / DevEUI / AppKey 逐个点 Generate</p></div>
+    <div class="stepBox"><span class="num">5</span><b>复制回固件</b><p>设备详情页 Overview 复制 3 个值，写入固件或 AT 命令(见下)</p></div>
+  </div>
+
+  <div class="secSub">② 写进固件的两种方法</div>
+  <pre class="code"><span class="cm">// 方法 A: 改源码（LoRaWAN_End_Node 示例 se_identity.c / app_conf）</span>
+<span class="hl">#define DEMO_APP_EUI  { 0xXX,0xXX,... }</span>   <span class="cm">/* 8 字节 = TTN 的 JoinEUI */</span>
+<span class="hl">#define DEMO_APP_KEY  { 0xXX,0xXX,... }</span>   <span class="cm">/* 16 字节 = TTN 的 AppKey */</span>
+<span class="hl">#define DEMO_DEV_EUI  { 0xXX,0xXX,... }</span>   <span class="cm">/* 8 字节 = TTN 的 DevEUI */</span>
+
+<span class="cm">// 方法 B: AT 命令（无需重新编译，AT_Slave 支持）</span>
+AT+DEVEUI=...      AT+APPEUI=...      AT+APPKEY=...
+AT+DEVEUI=?        AT+APPEUI=?        AT+APPKEY=?   <span class="cm">// "?" 查询确认</span></pre>
+
+  <div class="warn">
+    <b>⚠️ 常见坑：</b>
+    ① TTN 频段 plan 必须与网关一致选 <b>US 915</b>，选错会被 NS 丢弃；
+    ② <b>AppKey 抄错</b> → JoinRequest 发出去但 TTN 一直不响应（MIC 校验失败）；
+    ③ 设备详情页 AppKey 被隐藏时点 <b>Show key</b>；
+    ④ <b>网关不需要这三个值</b>——网关只配 Gateway EUI + Server Address，AppKey 只存在于"设备 ↔ TTN"之间；泄露即等于别人可以仿冒你的设备。
+  </div>
+    </div>
+  </details>
+
+  </details>
+</div>
+
+<script>
+(function () {
+  "use strict";
+  var canvas = document.getElementById("cv");
+  var ctx = canvas.getContext("2d");
+  var badge = document.getElementById("stepBadge");
+  var textEl = document.getElementById("stepText");
+  var btnPrev = document.getElementById("btnPrev");
+  var btnPlay = document.getElementById("btnPlay");
+  var btnNext = document.getElementById("btnNext");
+
+  var W = 1200, H = 620;
+
+  /* ---------- 布局 ---------- */
+  var path = { x: 40, y: 70, w: 330, h: 500 };          // 左: 学习路径
+  var right = { x: 400, y: 70, w: 760, h: 500 };        // 右: 协议/时序
+
+  /* 学习路径 5 节点 */
+  var PATH_NODES = [
+    { y: 116, t: "① 环境准备", d: "STM32CubeWL + TTN 注册\n双核烧录(CM0+ RF 固件)" },
+    { y: 208, t: "② 跑通官方示例", d: "LoRaWAN_End_Node\nAT+JOIN=1 入网" },
+    { y: 300, t: "③ 观察交互", d: "AT+SEND 上行\nTTN Live data 看帧" },
+    { y: 392, t: "④ 时间同步", d: "DeviceTimeReq/Ans\nAT+CLASS=2 Beacons" },
+    { y: 484, t: "⑤ 读源码→迁移", d: "LoRaMac.c 状态机\n迁移到 shell 工程" }
+  ];
+
+  /* 协议分层横条 */
+  var LAYERS = [
+    { y: 100, t: "应用层", d: "业务帧 / 传感器数据 / 你写的代码", c: "#35d0ff" },
+    { y: 160, t: "LoRaWAN MAC 层", d: "入网 · 密钥 · Class A/B/C · 信道管理", c: "#4ade80" },
+    { y: 220, t: "LoRa 物理层", d: "SX126x CSS 调制 · SF/BW/CR/频率", c: "#a78bfa" }
+  ];
+
+  /* OTAA 时序 */
+  var node = { x: 430, y: 300, w: 200, h: 110 };
+  var srv  = { x: 930, y: 300, w: 200, h: 110 };
+
+  var STEPS = [
+    { t: "总览：分层(物理/MAC/应用) → OTAA 入网 → 时间同步 → 5 步实操" },
+    { t: "概念分层：LoRa(物理层) ≠ LoRaWAN(MAC)，时间同步/入网都在 MAC 层" },
+    { t: "OTAA ①：设备发送 JoinRequest（DevEUI/AppEUI + MIC）" },
+    { t: "OTAA ②：服务器校验后返回加密的 JoinAccept（含 DevAddr）" },
+    { t: "OTAA ③：设备派生 NwkSKey/AppSKey → JOINED！开始正常上行" },
+    { t: "时间同步(1/2)：Class A 上行带 DeviceTimeReq → 下行 DeviceTimeAns 校时" },
+    { t: "时间同步(2/2)：Class B 网络每 128s 广播 Beacon，设备周期性校时（PingSlot 前提）" },
+    { t: "实操①：环境准备——安装 STM32CubeWL、注册 TTN 应用、烧 CM4+CM0+ 双核固件" },
+    { t: "实操②：跑通 LoRaWAN_End_Node —— AT+JOIN=1，日志看 JOIN REQUEST/ACCEPT/JOINED" },
+    { t: "实操③：AT+SEND=1:12:HELLO 上行，TTN Live data 看帧结构(MHDR/FCnt/FPort/MIC)" },
+    { t: "实操④：AT+CLASS=2 听 Beacon，看时间校准日志；源码看 LoRaMacClassB.c" },
+    { t: "实操⑤：读 LoRaMac.c Join 状态机 → 把 AT 命令迁移成你的 shell 命令" }
+  ];
+  var STEP_COUNT = STEPS.length;
+  var cur = 0, playing = false, playTimer = null;
+
+  /* ---------- 适配 ---------- */
+  function fit() {
+    var dpr = window.devicePixelRatio || 1;
+    var cssW = canvas.clientWidth || 1200;
+    var cssH = cssW * H / W;
+    canvas.style.height = cssH + "px";
+    canvas.width = Math.round(cssW * dpr);
+    canvas.height = Math.round(cssH * dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+  window.addEventListener("resize", fit);
+
+  /* ---------- 工具 ---------- */
+  function rr(x, y, w, h, r) {
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.arcTo(x + w, y, x + w, y + h, r);
+    ctx.arcTo(x + w, y + h, x, y + h, r);
+    ctx.arcTo(x, y + h, x, y, r);
+    ctx.arcTo(x, y, x + w, y, r);
+    ctx.closePath();
+  }
+  function box(b, o) {
+    o = o || {};
+    ctx.save();
+    ctx.globalAlpha = o.alpha != null ? o.alpha : 1;
+    ctx.fillStyle = o.fill || "rgba(30,39,64,.85)";
+    if (o.glow) { ctx.shadowColor = o.glow; ctx.shadowBlur = 18; }
+    rr(b.x, b.y, b.w, b.h, o.radius || 10); ctx.fill();
+    ctx.shadowBlur = 0;
+    ctx.strokeStyle = o.stroke || "rgba(44,58,94,1)";
+    ctx.lineWidth = o.lw || 1.5; ctx.stroke();
+    if (o.title) {
+      ctx.fillStyle = o.titleColor || "#9fb2e0";
+      ctx.font = "600 12px 'Segoe UI', sans-serif";
+      ctx.textAlign = "left"; ctx.fillText(o.title, b.x + 12, b.y + 20);
+    }
+    ctx.restore();
+  }
+  function label(x, y, text, size, color, align, weight) {
+    ctx.fillStyle = color || "#dbe4ff";
+    ctx.font = (weight || 500) + " " + (size || 13) + "px 'Segoe UI','Microsoft YaHei',sans-serif";
+    ctx.textAlign = align || "center"; ctx.textBaseline = "middle";
+    ctx.fillText(text, x, y);
+  }
+  function lines(cx, y, arr, size, color) {
+    var total = (arr.length - 1) * (size + 4);
+    arr.forEach(function (ln, i) {
+      label(cx, y - total / 2 + i * (size + 4), ln, size, color, "center", 500);
+    });
+  }
+  function flashRect(b, color, alpha) {
+    ctx.save(); ctx.globalAlpha = alpha;
+    ctx.strokeStyle = color; ctx.lineWidth = 3;
+    rr(b.x - 4, b.y - 4, b.w + 8, b.h + 8, 12); ctx.stroke(); ctx.restore();
+  }
+  function arrowHead(x, y, dir, color) {
+    ctx.save(); ctx.fillStyle = color; ctx.translate(x, y);
+    if (dir === "right") { /* 0 */ }
+    else if (dir === "down") { ctx.rotate(Math.PI / 2); }
+    else if (dir === "left") { ctx.rotate(Math.PI); }
+    else if (dir === "up") { ctx.rotate(-Math.PI / 2); }
+    ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(-11, -5); ctx.lineTo(-11, 5);
+    ctx.closePath(); ctx.fill(); ctx.restore();
+  }
+  function flowLine(pts, t, color, dash) {
+    ctx.save();
+    ctx.strokeStyle = color; ctx.lineWidth = 2.4;
+    ctx.setLineDash(dash || []); ctx.beginPath();
+    pts.forEach(function (p, i) { i ? ctx.lineTo(p[0], p[1]) : ctx.moveTo(p[0], p[1]); });
+    ctx.stroke(); ctx.setLineDash([]);
+    var lens = [], total = 0;
+    for (var i = 0; i < pts.length - 1; i++) {
+      var dx = pts[i + 1][0] - pts[i][0], dy = pts[i + 1][1] - pts[i][1];
+      var L = Math.sqrt(dx * dx + dy * dy); lens.push(L); total += L;
+    }
+    var d = (t % 1) * total;
+    for (var i2 = 0; i2 < lens.length; i2++) {
+      if (d <= lens[i2]) {
+        var f = lens[i2] ? d / lens[i2] : 0;
+        ctx.fillStyle = color;
+        ctx.beginPath();
+        ctx.arc(pts[i2][0] + (pts[i2 + 1][0] - pts[i2][0]) * f,
+                pts[i2][1] + (pts[i2 + 1][1] - pts[i2][1]) * f, 4.5, 0, 6.2832);
+        ctx.fill(); break;
+      }
+      d -= lens[i2];
+    }
+    ctx.restore();
+  }
+
+  /* ---------- 左面板: 学习路径 ---------- */
+  function drawPath(now) {
+    box(path, { title: "学习路径 (5 步)", fill: "rgba(17,23,38,.85)", lw: 1.5 });
+    PATH_NODES.forEach(function (n, i) {
+      var hl = (cur >= 7 + i);
+      var active = cur === 7 + i;
+      var b = { x: path.x + 16, y: n.y, w: path.w - 32, h: 72, c: 0 };
+      box(b, {
+        fill: active ? "rgba(20,30,52,.92)" : "rgba(30,39,64,.55)",
+        stroke: active ? "#fbbf24" : "#2c3a5e",
+        glow: active ? "#fbbf24" : null, lw: active ? 2 : 1.2, radius: 12
+      });
+      label(b.x + 14, b.y + 22, n.t, 13, active ? "#fbbf24" : (hl ? "#9fb2e0" : "#5b6c94"), "left", 700);
+      lines(b.x + b.w / 2 + 6, b.y + 52, n.d.split("\n"), 10.5, active ? "#dbe4ff" : "#8493b8");
+      if (active) flashRect(b, "#fbbf24", .35 + .2 * Math.sin(now / 200));
+      /* 连接线 */
+      if (i < PATH_NODES.length - 1) {
+        ctx.save(); ctx.strokeStyle = "rgba(44,58,94,.8)"; ctx.lineWidth = 1.5;
+        ctx.beginPath(); ctx.moveTo(b.x + b.w / 2, b.y + 72);
+        ctx.lineTo(b.x + b.w / 2, PATH_NODES[i + 1].y - 2); ctx.stroke();
+        ctx.restore();
+      }
+    });
+  }
+
+  /* ---------- 右面板 ---------- */
+  function drawRight(now, t) {
+    box(right, { title: "协议分层 · OTAA 入网 · 时间同步", fill: "rgba(17,23,38,.85)", lw: 1.5 });
+
+    /* 分层条 */
+    LAYERS.forEach(function (L, i) {
+      var b = { x: right.x + 16, y: L.y, w: right.w - 32, h: 48 };
+      var hl = cur === 1 || (cur === 0 && false);
+      box(b, {
+        fill: hl ? "rgba(20,30,52,.92)" : "rgba(30,39,64,.5)",
+        stroke: hl ? L.c : "#2c3a5e", glow: hl ? L.c : null, lw: hl ? 2 : 1.1, radius: 10
+      });
+      label(b.x + 16, b.y + b.h / 2, L.t, 13, hl ? L.c : (cur < 7 ? "#9fb2e0" : "#5b6c94"), "left", 700);
+      label(b.x + b.w - 16, b.y + b.h / 2, L.d, 11, hl ? "#dbe4ff" : "#5b6c94", "right");
+      if (hl) flashRect(b, L.c, .3 + .18 * Math.sin(now / 200));
+    });
+
+    /* 设备 / 服务器 */
+    var nodeActive = cur >= 2 && cur <= 6;
+    var srvActive = cur >= 2 && cur <= 6;
+    box(node, {
+      title: "设备 Node · NUCLEO-WL55JC1", radius: 12,
+      fill: nodeActive ? "rgba(74,222,128,.10)" : "rgba(30,39,64,.6)",
+      stroke: nodeActive ? "#4ade80" : "#2c3a5e", glow: nodeActive ? "#4ade80" : null,
+      titleColor: nodeActive ? "#4ade80" : "#9fb2e0"
+    });
+    lines(node.x + node.w / 2, node.y + node.h / 2 + 8,
+      cur >= 4 ? ["CM4: LoRaWAN 协议栈", "CM0+: RF 固件(SHCI)"] : ["CM4: LoRaWAN 协议栈"], 10.5,
+      nodeActive ? "#cfe9ff" : "#8493b8");
+
+    box(srv, {
+      title: "网络服务器 · TTN / ChirpStack", radius: 12,
+      fill: srvActive ? "rgba(53,208,255,.08)" : "rgba(30,39,64,.6)",
+      stroke: srvActive ? "#35d0ff" : "#2c3a5e", glow: srvActive ? "#35d0ff" : null,
+      titleColor: srvActive ? "#35d0ff" : "#9fb2e0"
+    });
+    lines(srv.x + srv.w / 2, srv.y + srv.h / 2 + 8,
+      ["AppKey 校验 · 会话密钥", "Live data · 下行调度"], 10.5,
+      srvActive ? "#cfe9ff" : "#8493b8");
+
+    /* OTAA 时序箭头 */
+    var yA = node.y + 34, yB = node.y + 74;
+    if (cur === 2) {
+      flowLine([[node.x + node.w, yA], [srv.x, yA]], t, "#4ade80");
+      arrowHead(srv.x - 2, yA, "left", "#4ade80");
+      label((node.x + node.w + srv.x) / 2, yA - 12, "JoinRequest (DevEUI/AppEUI+MIC)", 11, "#4ade80");
+    } else if (cur === 3) {
+      flowLine([[srv.x, yB], [node.x + node.w, yB]], t, "#35d0ff");
+      arrowHead(node.x + node.w + 2, yB, "left", "#35d0ff");
+      label((node.x + node.w + srv.x) / 2, yB - 12, "JoinAccept (加密: DevAddr+密钥)", 11, "#35d0ff");
+    } else if (cur === 4) {
+      /* JOINED 高亮 */
+      flashRect(node, "#4ade80", .5);
+      flowLine([[node.x + node.w, yA], [srv.x, yA]], t, "#4ade80");
+      arrowHead(srv.x - 2, yA, "left", "#4ade80");
+      label((node.x + node.w + srv.x) / 2, yA - 12, "JOINED! → 上行帧 (NwkSKey 加密)", 11, "#4ade80", "center", 700);
+    } else if (cur === 5) {
+      flowLine([[node.x + node.w, yB], [srv.x, yB]], t, "#a78bfa");
+      arrowHead(srv.x - 2, yB, "left", "#a78bfa");
+      label((node.x + node.w + srv.x) / 2, yB - 12, "DeviceTimeReq (MAC 命令)", 11, "#a78bfa");
+      flowLine([[srv.x, yA + 8], [node.x + node.w, yA + 8]], t, "#a78bfa", [5, 4]);
+      arrowHead(node.x + node.w + 2, yA + 8, "left", "#a78bfa");
+      label((node.x + node.w + srv.x) / 2, yA - 4, "DeviceTimeAns → 校准本地时钟", 11, "#a78bfa");
+    } else if (cur === 6) {
+      /* Beacon 广播 */
+      flashRect(node, "#a78bfa", .5);
+      var pulse = (Math.sin(t * 4) + 1) / 2;
+      for (var k = 0; k < 3; k++) {
+        ctx.save();
+        ctx.globalAlpha = .25 + pulse * .4;
+        ctx.strokeStyle = "#a78bfa"; ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(srv.x + srv.w / 2, srv.y + srv.h / 2, 60 + k * 18 + pulse * 8, 0, 6.2832);
+        ctx.stroke();
+        ctx.restore();
+      }
+      label((srv.x + srv.w / 2 + node.x + node.w) / 2, yA - 14,
+            "Beacon 每 128s 广播 → Class B 周期性校时", 11.5, "#a78bfa", "center", 700);
+    }
+
+    /* 仅 OTAA/时间同步阶段显示时序区标题 */
+    if (cur >= 2 && cur <= 6) {
+      ctx.save(); ctx.fillStyle = "rgba(159,178,224,.9)"; ctx.font = "600 11px 'Segoe UI',sans-serif";
+      ctx.textAlign = "left";
+      ctx.fillText(cur <= 4 ? "OTAA 入网时序" : "时间同步时序", right.x + 16, node.y - 12);
+      ctx.restore();
+    }
+
+    /* 底部提示: 当前学习阶段 */
+    if (cur >= 7) {
+      ctx.save(); ctx.fillStyle = "rgba(251,191,36,.85)"; ctx.font = "600 12px 'Segoe UI',sans-serif";
+      ctx.textAlign = "left";
+      ctx.fillText("→ 实操阶段: 按左侧路径逐步执行 (AT 命令/源码)", right.x + 16, right.y + right.h - 14);
+      ctx.restore();
+    }
+  }
+
+  function draw(now) {
+    var t = (now || 0) / 1000;
+    ctx.clearRect(0, 0, W, H);
+    ctx.save(); ctx.strokeStyle = "rgba(44,58,94,.18)"; ctx.lineWidth = 1;
+    for (var gx = 0; gx < W; gx += 40) { ctx.beginPath(); ctx.moveTo(gx, 0); ctx.lineTo(gx, H); ctx.stroke(); }
+    for (var gy = 0; gy < H; gy += 40) { ctx.beginPath(); ctx.moveTo(0, gy); ctx.lineTo(W, gy); ctx.stroke(); }
+    ctx.restore();
+
+    drawPath(now);
+    drawRight(now, t);
+  }
+
+  /* ---------- 控制 ---------- */
+  function render(now) {
+    draw(now);
+    badge.textContent = "STEP " + cur + " / " + (STEP_COUNT - 1);
+    textEl.textContent = STEPS[cur].t;
+    btnPrev.disabled = cur === 0;
+    btnNext.disabled = cur === STEP_COUNT - 1;
+  }
+  var rafId = null;
+  function tick(now) { draw(now); rafId = requestAnimationFrame(tick); }
+  function startRenderLoop() { if (!rafId) rafId = requestAnimationFrame(tick); }
+
+  function go(delta) {
+    cur = Math.max(0, Math.min(STEP_COUNT - 1, cur + delta));
+    render(performance.now());
+  }
+  function pausePlay() {
+    playing = false; btnPlay.textContent = "▶ 播放";
+    btnPlay.classList.remove("primary");
+    if (playTimer) { clearTimeout(playTimer); playTimer = null; }
+  }
+  function startPlay() {
+    playing = true; btnPlay.textContent = "⏸ 暂停";
+    btnPlay.classList.add("primary");
+    if (cur >= STEP_COUNT - 1) cur = 0;
+    render(performance.now());
+    playTimer = setTimeout(function loop() {
+      if (!playing) return;
+      if (cur >= STEP_COUNT - 1) { pausePlay(); render(performance.now()); return; }
+      go(1);
+      if (playing) playTimer = setTimeout(loop, 2400);
+    }, 1200);
+  }
+  btnPrev.addEventListener("click", function () { pausePlay(); go(-1); });
+  btnNext.addEventListener("click", function () { pausePlay(); go(1); });
+  btnPlay.addEventListener("click", function () { playing ? pausePlay() : startPlay(); });
+
+  fit(); render(performance.now()); startRenderLoop();
+})();
+</script>
+</body>
+</html>
