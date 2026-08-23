@@ -27,6 +27,7 @@
 #include "stm32wlxx_hal_uart.h"
 #include "stm32wlxx_hal_rtc.h"
 #include "stm32wlxx_nucleo.h"
+#include "shell_port.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -92,7 +93,12 @@ int main(void)
 {
 
   /* USER CODE BEGIN 1 */
-
+  /* shell "download" 命令设置的 bootloader 请求标志（复位后保留） */
+  if (shellBootFlag == SHELL_BOOTFLAG_MAGIC)
+  {
+    shellBootFlag = 0U;               /* 清除标志，防止下载后复位再次进入 */
+    SystemBootloaderJump();           /* 跳转 ROM bootloader，停留等待 UART 下载 */
+  }
   /* USER CODE END 1 */
 
   /* MCU Configuration--------------------------------------------------------*/
@@ -147,6 +153,7 @@ int main(void)
 
   /* USER CODE BEGIN RTOS_THREADS */
   /* add threads, ... */
+  ShellInit();   /* Letter Shell on LPUART1 */
   /* USER CODE END RTOS_THREADS */
 
   /* USER CODE BEGIN RTOS_EVENTS */
@@ -323,7 +330,7 @@ static void MX_LPUART1_UART_Init(void)
 
   /* USER CODE END LPUART1_Init 1 */
   hlpuart1.Instance = LPUART1;
-  hlpuart1.Init.BaudRate = 209700;
+  hlpuart1.Init.BaudRate = 115200;
   hlpuart1.Init.WordLength = UART_WORDLENGTH_8B;
   hlpuart1.Init.StopBits = UART_STOPBITS_1;
   hlpuart1.Init.Parity = UART_PARITY_NONE;

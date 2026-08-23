@@ -73,7 +73,11 @@ C_SOURCES =  \
 ../../Drivers/BSP/STM32WLxx_Nucleo/stm32wlxx_nucleo.c \
 ../../Drivers/User/SSD1315/Src/ssd1315.c \
 ../../Drivers/STM32WLxx_HAL_Driver/Src/stm32wlxx_hal_i2c.c \
-../../Drivers/STM32WLxx_HAL_Driver/Src/stm32wlxx_hal_i2c_ex.c
+../../Drivers/STM32WLxx_HAL_Driver/Src/stm32wlxx_hal_i2c_ex.c \
+../../Middlewares/Third_Party/letter-shell/src/shell.c \
+../../Middlewares/Third_Party/letter-shell/src/shell_ext.c \
+../../Platform/Shell/shell_port.c \
+../../Platform/Shell/shell_cmd_user.c
 
 # ASM sources
 ASM_SOURCES =  \
@@ -147,7 +151,9 @@ C_INCLUDES =  \
 -I../../Drivers/CMSIS/Device/ST/STM32WLxx/Include \
 -I../../Drivers/CMSIS/Include \
 -I../../Drivers/BSP/STM32WLxx_Nucleo \
--I../../Drivers/User/SSD1315/Inc
+-I../../Drivers/User/SSD1315/Inc \
+-I../../Middlewares/Third_Party/letter-shell/src \
+-I../../Platform/Shell
 
 
 # compile gcc flags
@@ -178,6 +184,26 @@ LDFLAGS = $(MCU) -specs=nano.specs -T$(LDSCRIPT) $(LIBDIR) $(LIBS) -Wl,-Map=$(BU
 # default action: build all
 all: $(BUILD_DIR)/$(TARGET).elf $(BUILD_DIR)/$(TARGET).hex $(BUILD_DIR)/$(TARGET).bin
 
+
+#######################################
+# download via UART system bootloader (STM32CubeProgrammer)
+# usage:
+#   make download COM=5      (COM port number, required, e.g. 5 -> COM5)
+# prerequisite: 先在 shell 中执行 download 命令，使 MCU 进入 ROM bootloader
+#######################################
+STM32CUBEPROGRAMMER ?= STM32_Programmer_CLI.exe
+STM32CUBEPROGRAMMER_DIR ?= C:/Program Files/STMicroelectronics/STM32Cube/STM32CubeProgrammer/bin
+
+ifeq ($(filter COM%,$(COM)),)
+COM_PORT = COM$(COM)
+else
+COM_PORT = $(COM)
+endif
+
+download: $(BUILD_DIR)/$(TARGET).hex
+	@if [ -z "$(COM)" ]; then echo "Usage: make download COM=<number> , e.g. COM=5"; exit 1; fi
+	@echo ">>> Downloading $(BUILD_DIR)/$(TARGET).hex to $(COM_PORT) via UART bootloader ..."
+	"$(STM32CUBEPROGRAMMER_DIR)/$(STM32CUBEPROGRAMMER)" -c port=$(COM_PORT) -w $(BUILD_DIR)/$(TARGET).hex -v
 
 #######################################
 # build the application

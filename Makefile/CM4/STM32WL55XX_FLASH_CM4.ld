@@ -58,6 +58,16 @@ SECTIONS
     . = ALIGN(8);
   } >ROM
 
+  /* Letter Shell exported commands (SHELL_EXPORT_CMD) */
+  .shellCommand :
+  {
+    . = ALIGN(8);
+    _shell_command_start = .;
+    KEEP(*(shellCommand))
+    _shell_command_end = .;
+    . = ALIGN(8);
+  } >ROM
+
   .ARM.extab :
   {
     . = ALIGN(8);
@@ -184,6 +194,16 @@ SECTIONS
 
   PROVIDE( __bss_start = __tbss_start );
   PROVIDE( __bss_size = __bss_end - __bss_start );
+
+  /* Boot flag: survives system reset (kept outside .bss zero-init area).
+     Set by the shell "download" command before NVIC_SystemReset(), checked
+     at the beginning of main() to jump into the ROM bootloader. */
+  .bootflag (NOLOAD) :
+  {
+    . = ALIGN(4);
+    KEEP(*(.bootflag))
+    . = ALIGN(4);
+  } >RAM1
 
 
   /* Data section into "SRAM1" Ram type memory: Non-backup SRAM1 dedicated to CM4 */
