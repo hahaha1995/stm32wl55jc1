@@ -12,6 +12,7 @@
 #include "shell.h"
 #include "shell_port.h"
 
+#include "stm32wlxx_hal_uart.h"
 #include "stm32wlxx_hal.h"
 #include "FreeRTOS.h"
 #include "task.h"

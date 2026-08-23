@@ -14,13 +14,12 @@
                 "USE_HAL_DRIVER",
                 "USE_FULL_LL_DRIVER",
                 "NDEBUG",
-                "RT_DEBUG",
                 "USE_FULL_ASSERT"
             ],
             "cStandard": "${default}",
             "cppStandard": "${default}",
-            "intelliSenseMode": "windows-gcc-arm64",
-            "compilerPath": "${ST_GNU_TOOLS}/arm-none-eabi-gcc.exe"
+            "intelliSenseMode": "gcc-arm",
+            "compilerPath": "${env:ST_GNU_TOOLS}/arm-none-eabi-gcc.exe"
         },
         {
             "name": "STM32WL55JC1-CM0PLUS",
@@ -36,13 +35,12 @@
                 "USE_HAL_DRIVER",
                 "USE_FULL_LL_DRIVER",
                 "NDEBUG",
-                "RT_DEBUG",
                 "USE_FULL_ASSERT"
             ],
             "cStandard": "${default}",
             "cppStandard": "${default}",
-            "intelliSenseMode": "windows-gcc-arm64",
-            "compilerPath": "${ST_GNU_TOOLS}/arm-none-eabi-gcc.exe"
+            "intelliSenseMode": "gcc-arm",
+            "compilerPath": "${env:ST_GNU_TOOLS}/arm-none-eabi-gcc.exe"
         }
     ],
     "version": 4
