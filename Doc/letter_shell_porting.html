@@ -1,0 +1,452 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Letter Shell 移植步骤 · 可视化指南</title>
+<style>
+  :root {
+    --bg: #0f1420; --panel: #171e30; --panel2: #1e2740;
+    --line: #2c3a5e; --text: #dbe4ff; --muted: #8493b8;
+    --cyan: #35d0ff; --green: #4ade80; --amber: #fbbf24;
+    --red: #f87171; --purple: #a78bfa; --pink: #f472b6;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: radial-gradient(1200px 700px at 20% -10%, #1a2440 0%, var(--bg) 60%);
+    color: var(--text); font-family: "Segoe UI", "Microsoft YaHei", system-ui, sans-serif;
+    min-height: 100vh; padding: 24px 20px 48px;
+  }
+  .wrap { max-width: 1240px; margin: 0 auto; }
+  header { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+  h1 { font-size: 26px; font-weight: 700; letter-spacing: .5px; }
+  h1 .tag { color: var(--green); }
+  p.sub { color: var(--muted); margin-top: 6px; font-size: 14px; }
+  .controls {
+    display: flex; gap: 8px; align-items: center; background: var(--panel);
+    border: 1px solid var(--line); border-radius: 12px; padding: 8px 10px;
+  }
+  button {
+    background: var(--panel2); color: var(--text); border: 1px solid var(--line);
+    border-radius: 8px; padding: 7px 13px; font-size: 13px; cursor: pointer; transition: .15s;
+  }
+  button:hover:not(:disabled) { border-color: var(--green); color: var(--green); }
+  button:disabled { opacity: .35; cursor: not-allowed; }
+  button.primary { background: #103a26; border-color: var(--green); color: var(--green); font-weight: 600; }
+  .stepInfo {
+    display: flex; align-items: center; gap: 10px; margin: 14px 0;
+    background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 10px 14px;
+  }
+  .stepBadge {
+    min-width: 76px; text-align: center; background: #103a26; color: var(--green);
+    border: 1px solid var(--green); border-radius: 999px; padding: 3px 10px; font-size: 12px; font-weight: 700;
+  }
+  .stepText { font-size: 15px; font-weight: 600; }
+  .cards {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 14px; margin-top: 18px;
+  }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px; }
+  .card h3 { font-size: 14px; color: var(--green); margin-bottom: 8px; }
+  .card ul { list-style: none; }
+  .card li { font-size: 13px; color: var(--muted); line-height: 1.7; padding-left: 14px; position: relative; }
+  .card li::before { content: "▸"; position: absolute; left: 0; color: var(--green); }
+  .card li b { color: var(--text); }
+  canvas { width: 100%; display: block; border-radius: 14px; }
+  .legend { display: flex; gap: 18px; flex-wrap: wrap; margin-top: 10px; font-size: 12px; color: var(--muted); }
+  .legend span { display: inline-flex; align-items: center; gap: 6px; }
+  .dot { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
+  @media (max-width: 720px) { .controls { width: 100%; justify-content: center; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <h1><span class="tag">Letter Shell</span> 移植步骤 · 可视化指南</h1>
+      <p class="sub">STM32WL55JC1 (CM4) · FreeRTOS · LPUART1 @ PA2/PA3 · 115200</p>
+    </div>
+    <div class="controls">
+      <button id="btnPrev">◀ 上一步</button>
+      <button id="btnPlay" class="primary">▶ 播放</button>
+      <button id="btnNext">下一步 ▶</button>
+    </div>
+  </header>
+
+  <div class="stepInfo">
+    <span class="stepBadge" id="stepBadge">STEP 0 / 10</span>
+    <span class="stepText" id="stepText">从零接入 Letter Shell 的完整流程</span>
+  </div>
+
+  <canvas id="cv"></canvas>
+
+  <div class="legend">
+    <span><i class="dot" style="background:var(--cyan)"></i> letter-shell 源码/配置</span>
+    <span><i class="dot" style="background:var(--purple)"></i> 移植层 Platform/Shell</span>
+    <span><i class="dot" style="background:var(--amber)"></i> CubeMX 生成代码接入</span>
+    <span><i class="dot" style="background:var(--pink)"></i> 构建与链接</span>
+    <span><i class="dot" style="background:var(--green)"></i> 完成/验证</span>
+  </div>
+
+  <div class="cards">
+    <div class="card">
+      <h3>核心文件</h3>
+      <ul>
+        <li><b>移植层</b>：`Platform/Shell/shell_port.c`（读写 + 任务 + bootloader 跳转）</li>
+        <li><b>配置头</b>：`letter-shell/src/shell_cfg.h`（功能开关集中地）</li>
+        <li><b>命令</b>：`Platform/Shell/shell_cmd_user.c`（SHELL_EXPORT_CMD）</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>三个易错点</h3>
+      <ul>
+        <li>VCP 引脚：NUCLEO-WL55JC1 = <b>LPUART1 @ PA2/PA3 (AF8)</b>，不是 PC0/PC1</li>
+        <li>链接脚本必须 <b>KEEP(.shellCommand)</b> 并定义 `_shell_command_start/end`</li>
+        <li>`SHELL_DEFAULT_USER` 找不到用户 → `shellSetUser(NULL)` 空指针 HardFault</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>移植层默认参数</h3>
+      <ul>
+        <li>RX 环形缓冲 <b>256 B</b> / 编辑缓冲 <b>512 B</b> / shell 任务栈 <b>4 KB</b></li>
+        <li>shell 任务优先级 `tskIDLE_PRIORITY + 1`，静态 TCB 零堆分配</li>
+        <li>TX 阻塞 100 ms 超时；RX 单字节中断逐字节入队</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>使用提示</h3>
+      <ul>
+        <li>串口 115200 / 8N1，上电出现 `letter:/$ ` 即成功</li>
+        <li>`help` 查看命令；`download` 进入 ROM bootloader 烧录</li>
+        <li>CubeMX 重新生成后记得补 `ShellInit()` 与中断使能</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  "use strict";
+  var canvas = document.getElementById("cv");
+  var ctx = canvas.getContext("2d");
+  var badge = document.getElementById("stepBadge");
+  var textEl = document.getElementById("stepText");
+  var btnPrev = document.getElementById("btnPrev");
+  var btnPlay = document.getElementById("btnPlay");
+  var btnNext = document.getElementById("btnNext");
+
+  var W = 1200, H = 600;
+
+  /* ---------- 布局 ---------- */
+  var tree = { x: 40, y: 70, w: 340, h: 480 };             // 左侧工程文件树
+  var flow = { x: 410, y: 70, w: 750, h: 480 };            // 右侧流程面板
+
+  /* 6 个阶段节点 */
+  var nodes = {
+    A: { x: 434, y: 118, w: 226, h: 84 },   // 源码集成 (cyan)
+    B: { x: 672, y: 118, w: 226, h: 84 },   // 配置 (cyan)
+    C: { x: 910, y: 118, w: 226, h: 84 },   // 移植层 (purple)
+    D: { x: 434, y: 252, w: 226, h: 84 },   // 接入工程 (amber)
+    E: { x: 672, y: 252, w: 226, h: 84 },   // 命令定义 (amber)
+    F: { x: 910, y: 252, w: 226, h: 84 },   // 构建与链接 (pink)
+    G: { x: 434, y: 398, w: 702, h: 92 }    // 验证运行 (green)
+  };
+
+  var NODE_STYLE = {
+    A: { c: "#35d0ff", t1: "① 集成源码", t2: "letter-shell/src ×5" },
+    B: { c: "#35d0ff", t1: "② 配置", t2: "shell_cfg.h 功能开关" },
+    C: { c: "#a78bfa", t1: "③ 移植层", t2: "shell_port.c read/write" },
+    D: { c: "#fbbf24", t1: "④ 接入工程", t2: "main.c + it.c + msp.c" },
+    E: { c: "#fbbf24", t1: "⑤ 命令定义", t2: "shell_cmd_user.c" },
+    F: { c: "#f472b6", t1: "⑥ 构建与链接", t2: "Makefile + .ld 段" },
+    G: { c: "#4ade80", t1: "⑦ 验证运行", t2: "115200 → letter:/$" }
+  };
+
+  /* 文件树内容 */
+  var TREE = [
+    { group: "Middlewares/Third_Party/letter-shell/src", files: ["shell.c", "shell.h", "shell_cfg.h", "shell_ext.c/.h"], key: "src" },
+    { group: "Platform/Shell  (移植层)", files: ["shell_port.c", "shell_port.h", "shell_cmd_user.c"], key: "port" },
+    { group: "CM4/Core/Src  (CubeMX)", files: ["main.c", "stm32wlxx_it.c", "stm32wlxx_hal_msp.c"], key: "cm4" },
+    { group: "Makefile/CM4", files: ["Makefile", "STM32WL55XX_FLASH_CM4.ld"], key: "build" }
+  ];
+
+  /* ---------- 步骤 ---------- */
+  var STEPS = [
+    { t: "总览：源码 → 配置 → 移植层 → 接入 → 命令 → 构建 → 验证" },
+    { t: "① 集成源码：把 letter-shell 的 shell.c/.h、shell_cfg.h、shell_ext.* 放入 Middlewares/Third_Party/letter-shell/src/" },
+    { t: "② 配置 shell_cfg.h：SHELL_USING_CMD_EXPORT=1、SHELL_GET_TICK()=HAL_GetTick()、SHELL_PRINT_BUFFER=128 等" },
+    { t: "③ 移植层(1/2)：实现 shellPortWrite()(HAL 阻塞 TX 100ms) 与 shellPortRead()(环形缓冲轮询+让出)" },
+    { t: "③ 移植层(2/2)：HAL_UART_RxCpltCallback() 单字节入队 + 静态任务 ShellTask() 注册 read/write 并 shellInit()" },
+    { t: "④ 接入工程(1/2)：main.c 在 osKernelInitialize() 后、osKernelStart() 前调用 ShellInit()" },
+    { t: "④ 接入工程(2/2)：stm32wlxx_it.c 添加 LPUART1_IRQHandler；msp.c 配 PA2/PA3 AF8 + NVIC 优先级 5" },
+    { t: "⑤ 命令定义：shell_cmd_user.c 用 SHELL_EXPORT_CMD(权限|类型, 名字, 函数, 描述) 导出 hello/led/tick/download" },
+    { t: "⑥ 构建(1/2)：Makefile 的 C_SOURCES 加 shell*.c/shell_port.c/shell_cmd_user.c，C_INCLUDES 加两个 -I 路径" },
+    { t: "⑥ 构建(2/2)：链接脚本加 .shellCommand 段：KEEP(*(shellCommand)) + _shell_command_start/_end 符号" },
+    { t: "⑦ 验证：烧录后 115200 应出现 ASCII banner 与提示符 letter:/$ ，输入 help 列出全部命令" }
+  ];
+  var STEP_COUNT = STEPS.length;
+  var cur = 0, playing = false, playTimer = null;
+
+  /* ---------- 高清适配 ---------- */
+  function fit() {
+    var dpr = window.devicePixelRatio || 1;
+    var cssW = canvas.clientWidth || 1200;
+    var cssH = cssW * H / W;
+    canvas.style.height = cssH + "px";
+    canvas.width = Math.round(cssW * dpr);
+    canvas.height = Math.round(cssH * dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+  window.addEventListener("resize", fit);
+
+  /* ---------- 工具 ---------- */
+  function rr(x, y, w, h, r) {
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.arcTo(x + w, y, x + w, y + h, r);
+    ctx.arcTo(x + w, y + h, x, y + h, r);
+    ctx.arcTo(x, y + h, x, y, r);
+    ctx.arcTo(x, y, x + w, y, r);
+    ctx.closePath();
+  }
+  function box(b, o) {
+    o = o || {};
+    ctx.save();
+    ctx.globalAlpha = o.alpha != null ? o.alpha : 1;
+    ctx.fillStyle = o.fill || "rgba(30,39,64,.85)";
+    if (o.glow) { ctx.shadowColor = o.glow; ctx.shadowBlur = 18; }
+    rr(b.x, b.y, b.w, b.h, o.radius || 10); ctx.fill();
+    ctx.shadowBlur = 0;
+    ctx.strokeStyle = o.stroke || "rgba(44,58,94,1)";
+    ctx.lineWidth = o.lw || 1.5; ctx.stroke();
+    if (o.title) {
+      ctx.fillStyle = o.titleColor || "#9fb2e0";
+      ctx.font = "600 12px 'Segoe UI', sans-serif";
+      ctx.textAlign = "left"; ctx.fillText(o.title, b.x + 12, b.y + 20);
+    }
+    ctx.restore();
+  }
+  function label(x, y, text, size, color, align, weight) {
+    ctx.fillStyle = color || "#dbe4ff";
+    ctx.font = (weight || 500) + " " + (size || 13) + "px 'Segoe UI','Microsoft YaHei',sans-serif";
+    ctx.textAlign = align || "center"; ctx.textBaseline = "middle";
+    ctx.fillText(text, x, y);
+  }
+  function multiLabel(b, lines, size, color) {
+    var y = b.y + b.h / 2 - (lines.length - 1) * (size + 4) / 2;
+    lines.forEach(function (ln, i) { label(b.x + b.w / 2, y + i * (size + 4), ln, size, color, "center", 500); });
+  }
+  function flashRect(b, color, alpha) {
+    ctx.save(); ctx.globalAlpha = alpha;
+    ctx.strokeStyle = color; ctx.lineWidth = 3;
+    rr(b.x - 4, b.y - 4, b.w + 8, b.h + 8, 12); ctx.stroke(); ctx.restore();
+  }
+  function flowLine(pts, t, color, dash) {
+    ctx.save();
+    ctx.strokeStyle = color; ctx.lineWidth = 2;
+    ctx.setLineDash(dash || []); ctx.beginPath();
+    pts.forEach(function (p, i) { i ? ctx.lineTo(p[0], p[1]) : ctx.moveTo(p[0], p[1]); });
+    ctx.stroke(); ctx.setLineDash([]);
+    var lens = [], total = 0;
+    for (var i = 0; i < pts.length - 1; i++) {
+      var dx = pts[i + 1][0] - pts[i][0], dy = pts[i + 1][1] - pts[i][1];
+      var L = Math.sqrt(dx * dx + dy * dy); lens.push(L); total += L;
+    }
+    var d = (t % 1) * total;
+    for (var i2 = 0; i2 < lens.length; i2++) {
+      if (d <= lens[i2]) {
+        var f = lens[i2] ? d / lens[i2] : 0;
+        ctx.fillStyle = color;
+        ctx.beginPath();
+        ctx.arc(pts[i2][0] + (pts[i2 + 1][0] - pts[i2][0]) * f,
+                pts[i2][1] + (pts[i2 + 1][1] - pts[i2][1]) * f, 4, 0, 6.2832);
+        ctx.fill(); break;
+      }
+      d -= lens[i2];
+    }
+    ctx.restore();
+  }
+  function arrowHead(x, y, dir, color) {
+    ctx.save(); ctx.fillStyle = color; ctx.translate(x, y);
+    if (dir === "right") { /* 0 */ }
+    else if (dir === "down") { ctx.rotate(Math.PI / 2); }
+    else if (dir === "left") { ctx.rotate(Math.PI); }
+    else if (dir === "up") { ctx.rotate(-Math.PI / 2); }
+    ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(-10, -5); ctx.lineTo(-10, 5);
+    ctx.closePath(); ctx.fill(); ctx.restore();
+  }
+
+  /* ---------- 绘制文件树 ---------- */
+  function drawTree(hlKey) {
+    box(tree, { title: "工程文件结构", fill: "rgba(17,23,38,.85)", lw: 1.5 });
+    var y = tree.y + 44;
+    TREE.forEach(function (g) {
+      var active = g.key === hlKey;
+      ctx.save();
+      if (active) {
+        ctx.fillStyle = "rgba(53,208,255,.10)";
+        rr(tree.x + 10, y - 14, tree.w - 20, g.files.length * 22 + 34, 8); ctx.fill();
+      }
+      ctx.restore();
+      label(tree.x + 22, y, g.group, 12, active ? "#35d0ff" : "#9fb2e0", "left", 700);
+      y += 20;
+      g.files.forEach(function (f) {
+        label(tree.x + 40, y, "· " + f, 12, active ? "#cfe9ff" : "#8493b8", "left");
+        y += 21;
+      });
+      y += 10;
+    });
+  }
+
+  /* ---------- 绘制节点 ---------- */
+  function drawNode(key, now, t) {
+    var b = nodes[key], s = NODE_STYLE[key];
+    var hl = currentHighlights()[key];
+    box(b, {
+      fill: hl ? "rgba(20,30,52,.9)" : "rgba(30,39,64,.55)",
+      stroke: hl ? s.c : "#2c3a5e",
+      glow: hl ? s.c : null,
+      lw: hl ? 2 : 1.2,
+      radius: 12
+    });
+    label(b.x + b.w / 2, b.y + 26, s.t1, 14, hl ? s.c : "#9fb2e0", "center", 700);
+    label(b.x + b.w / 2, b.y + 52, s.t2, 11, hl ? "#dbe4ff" : "#8493b8", "center");
+    if (hl && key !== "G") { flashRect(b, s.c, .35 + .2 * Math.sin(now / 200)); }
+    return { b: b, c: s.c, hl: hl };
+  }
+
+  function currentHighlights() {
+    var map = {};
+    var s = cur;
+    if (s === 1) map.A = 1;
+    else if (s === 2) map.B = 1;
+    else if (s === 3 || s === 4) map.C = 1;
+    else if (s === 5 || s === 6) map.D = 1;
+    else if (s === 7) map.E = 1;
+    else if (s === 8 || s === 9) map.F = 1;
+    else if (s === 10) map.G = 1;
+    else { map.A = map.B = map.C = map.D = map.E = map.F = map.G = 1; }  // 0 总览淡显全部
+    return map;
+  }
+  function treeKeyFor() {
+    var s = cur;
+    if (s === 1 || s === 2) return "src";
+    if (s === 3 || s === 4) return "port";
+    if (s === 5 || s === 6 || s === 7) return "cm4";
+    if (s === 8 || s === 9) return "build";
+    return null;
+  }
+
+  function draw(now) {
+    var t = (now || 0) / 1000;
+    ctx.clearRect(0, 0, W, H);
+    /* 网格 */
+    ctx.save(); ctx.strokeStyle = "rgba(44,58,94,.18)"; ctx.lineWidth = 1;
+    for (var gx = 0; gx < W; gx += 40) { ctx.beginPath(); ctx.moveTo(gx, 0); ctx.lineTo(gx, H); ctx.stroke(); }
+    for (var gy = 0; gy < H; gy += 40) { ctx.beginPath(); ctx.moveTo(0, gy); ctx.lineTo(W, gy); ctx.stroke(); }
+    ctx.restore();
+
+    drawTree(treeKeyFor());
+
+    box(flow, { title: "移植流程", fill: "rgba(17,23,38,.85)", lw: 1.5 });
+
+    /* 节点间连接箭头(A→B→C) (B→C 等) */
+    var out = {};
+    var order = ["A", "B", "C", "D", "E", "F"];
+    order.forEach(function (k, i) {
+      var b = nodes[k];
+      if (i < 2) {
+        ctx.save(); ctx.strokeStyle = "rgba(44,58,94,.8)"; ctx.lineWidth = 1.5;
+        ctx.beginPath(); ctx.moveTo(b.x + b.w, b.y + b.h / 2); ctx.lineTo(nodes[order[i + 1]].x, b.y + b.h / 2); ctx.stroke();
+        arrowHead(nodes[order[i + 1]].x - 2, b.y + b.h / 2, "left", "rgba(44,58,94,.8)");
+        ctx.restore();
+      }
+    });
+    /* C → D 折线 */
+    ctx.save(); ctx.strokeStyle = "rgba(44,58,94,.8)"; ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(nodes.C.x + nodes.C.w / 2, nodes.C.y + nodes.C.h);
+    ctx.lineTo(nodes.C.x + nodes.C.w / 2, nodes.C.y + nodes.C.h + 20);
+    ctx.lineTo(nodes.D.x + nodes.D.w / 2, nodes.D.y - 20);
+    ctx.lineTo(nodes.D.x + nodes.D.w / 2, nodes.D.y);
+    ctx.stroke(); arrowHead(nodes.D.x + nodes.D.w / 2, nodes.D.y + 2, "down", "rgba(44,58,94,.8)");
+    ctx.restore();
+    /* F → G 折线 */
+    ctx.save(); ctx.strokeStyle = "rgba(44,58,94,.8)"; ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(nodes.F.x + nodes.F.w / 2, nodes.F.y + nodes.F.h);
+    ctx.lineTo(nodes.F.x + nodes.F.w / 2, nodes.G.y - 14);
+    ctx.lineTo(nodes.G.x + nodes.G.w - 20, nodes.G.y - 14);
+    ctx.lineTo(nodes.G.x + nodes.G.w - 20, nodes.G.y);
+    ctx.stroke(); arrowHead(nodes.G.x + nodes.G.w - 20, nodes.G.y + 2, "down", "rgba(44,58,94,.8)");
+    ctx.restore();
+
+    /* 节点 */
+    ["A", "B", "C", "D", "E", "F"].forEach(function (k) { out[k] = drawNode(k, now, t); });
+    /* G */
+    var g = nodes.G, gs = NODE_STYLE.G, ghl = cur === 10;
+    box(g, {
+      fill: ghl ? "rgba(74,222,128,.10)" : "rgba(30,39,64,.55)",
+      stroke: ghl ? gs.c : "#2c3a5e", glow: ghl ? gs.c : null, lw: ghl ? 2 : 1.2
+    });
+    label(g.x + g.w / 2, g.y + 28, gs.t1, 15, ghl ? gs.c : "#9fb2e0", "center", 700);
+    if (cur === 10) {
+      label(g.x + g.w / 2, g.y + 58, "115200 · ASCII banner · letter:/$ · help 命令列表", 13, "#4ade80", "center", 600);
+      flashRect(g, gs.c, .35 + .2 * Math.sin(now / 200));
+    } else {
+      label(g.x + g.w / 2, g.y + 58, gs.t2, 11, "#8493b8", "center");
+    }
+
+    /* 步骤流动光点: 沿 A→B→C→D→E→F→G */
+    if (cur >= 1 && cur <= 10) {
+      var path = [
+        [nodes.A.x + nodes.A.w, nodes.A.y + nodes.A.h / 2],
+        [nodes.B.x, nodes.B.y + nodes.B.h / 2],
+        [nodes.B.x + nodes.B.w, nodes.B.y + nodes.B.h / 2],
+        [nodes.C.x, nodes.C.y + nodes.C.h / 2]
+      ];
+      flowLine(path, t, "rgba(53,208,255,.9)", [5, 5]);
+    }
+  }
+
+  /* ---------- 控制 ---------- */
+  function render(now) {
+    draw(now);
+    badge.textContent = "STEP " + cur + " / " + (STEP_COUNT - 1);
+    textEl.textContent = STEPS[cur].t;
+    btnPrev.disabled = cur === 0;
+    btnNext.disabled = cur === STEP_COUNT - 1;
+  }
+  var rafId = null;
+  function tick(now) { draw(now); rafId = requestAnimationFrame(tick); }
+  function startRenderLoop() { if (!rafId) rafId = requestAnimationFrame(tick); }
+
+  function go(delta) {
+    cur = Math.max(0, Math.min(STEP_COUNT - 1, cur + delta));
+    render(performance.now());
+  }
+  function pausePlay() {
+    playing = false; btnPlay.textContent = "▶ 播放";
+    btnPlay.classList.remove("primary");
+    if (playTimer) { clearTimeout(playTimer); playTimer = null; }
+  }
+  function startPlay() {
+    playing = true; btnPlay.textContent = "⏸ 暂停";
+    btnPlay.classList.add("primary");
+    if (cur >= STEP_COUNT - 1) cur = 0;
+    render(performance.now());
+    playTimer = setTimeout(function loop() {
+      if (!playing) return;
+      if (cur >= STEP_COUNT - 1) { pausePlay(); render(performance.now()); return; }
+      go(1);
+      if (playing) playTimer = setTimeout(loop, 2400);
+    }, 1200);
+  }
+  btnPrev.addEventListener("click", function () { pausePlay(); go(-1); });
+  btnNext.addEventListener("click", function () { pausePlay(); go(1); });
+  btnPlay.addEventListener("click", function () { playing ? pausePlay() : startPlay(); });
+
+  fit(); render(performance.now()); startRenderLoop();
+})();
+</script>
+</body>
+</html>

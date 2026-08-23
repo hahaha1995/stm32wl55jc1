@@ -1,0 +1,511 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>download 指令原理 - UART 固件下载可视化</title>
+<style>
+  :root {
+    --bg: #0f1420; --panel: #171e30; --panel2: #1e2740;
+    --line: #2c3a5e; --text: #dbe4ff; --muted: #8493b8;
+    --cyan: #35d0ff; --green: #4ade80; --amber: #fbbf24;
+    --red: #f87171; --purple: #a78bfa;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: radial-gradient(1200px 700px at 20% -10%, #1a2440 0%, var(--bg) 60%);
+    color: var(--text); font-family: "Segoe UI", "Microsoft YaHei", system-ui, sans-serif;
+    min-height: 100vh; padding: 24px 20px 48px;
+  }
+  .wrap { max-width: 1240px; margin: 0 auto; }
+  header { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+  h1 { font-size: 26px; font-weight: 700; letter-spacing: .5px; }
+  h1 .tag { color: var(--cyan); }
+  p.sub { color: var(--muted); margin-top: 6px; font-size: 14px; }
+  .controls {
+    display: flex; gap: 8px; align-items: center; background: var(--panel);
+    border: 1px solid var(--line); border-radius: 12px; padding: 8px 10px;
+  }
+  button {
+    background: var(--panel2); color: var(--text); border: 1px solid var(--line);
+    border-radius: 8px; padding: 7px 13px; font-size: 13px; cursor: pointer;
+    transition: .15s;
+  }
+  button:hover:not(:disabled) { border-color: var(--cyan); color: var(--cyan); }
+  button:disabled { opacity: .35; cursor: not-allowed; }
+  button.primary { background: #10314d; border-color: var(--cyan); color: var(--cyan); font-weight: 600; }
+  .stepInfo {
+    display: flex; align-items: center; gap: 10px; margin: 14px 0;
+    background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 10px 14px;
+  }
+  .stepBadge {
+    min-width: 76px; text-align: center; background: #10314d; color: var(--cyan);
+    border: 1px solid var(--cyan); border-radius: 999px; padding: 3px 10px; font-size: 12px; font-weight: 700;
+  }
+  .stepText { font-size: 15px; font-weight: 600; }
+  .cards {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 14px; margin-top: 18px;
+  }
+  .card {
+    background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px;
+  }
+  .card h3 { font-size: 14px; color: var(--cyan); margin-bottom: 8px; }
+  .card ul { list-style: none; }
+  .card li { font-size: 13px; color: var(--muted); line-height: 1.7; padding-left: 14px; position: relative; }
+  .card li::before { content: "▸"; position: absolute; left: 0; color: var(--cyan); }
+  .card li b { color: var(--text); }
+  canvas { width: 100%; display: block; border-radius: 14px; }
+  .legend { display: flex; gap: 18px; flex-wrap: wrap; margin-top: 10px; font-size: 12px; color: var(--muted); }
+  .legend span { display: inline-flex; align-items: center; gap: 6px; }
+  .dot { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
+  @media (max-width: 720px) { .controls { width: 100%; justify-content: center; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <h1><span class="tag">download</span> 指令原理 · UART 固件下载</h1>
+      <p class="sub">STM32WL55JC1 (NUCLEO-WL55JC1) · Letter Shell · ROM Bootloader @ 0x1FFF0000</p>
+    </div>
+    <div class="controls">
+      <button id="btnPrev">◀ 上一步</button>
+      <button id="btnPlay" class="primary">▶ 播放</button>
+      <button id="btnNext">下一步 ▶</button>
+    </div>
+  </header>
+
+  <div class="stepInfo">
+    <span class="stepBadge" id="stepBadge">STEP 0 / 10</span>
+    <span class="stepText" id="stepText">MCU 正常运行，shell 等待输入</span>
+  </div>
+
+  <canvas id="cv"></canvas>
+
+  <div class="legend">
+    <span><i class="dot" style="background:var(--green)"></i> Flash 应用区（用户代码）</span>
+    <span><i class="dot" style="background:var(--amber)"></i> SRAM .bootflag（复位保留）</span>
+    <span><i class="dot" style="background:var(--purple)"></i> ROM Bootloader（工厂固化）</span>
+    <span><i class="dot" style="background:var(--cyan)"></i> UART 通道（USART2 / LPUART1 @ PA2/PA3）</span>
+    <span><i class="dot" style="background:var(--red)"></i> 复位 / 跳转动作</span>
+  </div>
+
+  <div class="cards">
+    <div class="card">
+      <h3>为什么用「标志 + 复位」</h3>
+      <ul>
+        <li><b>IWDG 无法软件停止</b>：启动后只能喂狗，不能关闭，直接跳转会被看门狗复位</li>
+        <li>系统复位是<b>清除 IWDG 的唯一途径</b>，复位后 ROM 不会启动它</li>
+        <li>复位后外设状态干净，跳转无需清理 UART / 中断</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>.bootflag 段为什么能保留</h3>
+      <ul>
+        <li>放在 <code>.bss</code> 之后且为 <b>NOLOAD</b>，startup 的零初始化不会碰到它</li>
+        <li>不参与 <code>.data</code> 拷贝，复位后值保留</li>
+        <li>魔数 <code>0x4C53424C</code> = ASCII "LSBL"，误触发概率 1/2³²</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>为什么跳 ROM 而不是改 MEMRMP</h3>
+      <ul>
+        <li>直接读 <code>0x1FFF0000</code> 向量表并跳转，<b>不改 boot 配置</b></li>
+        <li>下载完成 <code>-rst</code> 后必定回到 Flash 应用，不依赖 remap 复位行为</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>ROM 为什么「停得住」</h3>
+      <ul>
+        <li>ROM 固件死循环等待同步字节 <b>0x7F</b>（AN3155），收到回 0x79 ACK</li>
+        <li>ROM 的 USART2 @ PA2/PA3 与板载 VCP 及 shell 引脚<b>完全一致</b>，不用改线</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  "use strict";
+  var canvas = document.getElementById("cv");
+  var ctx = canvas.getContext("2d");
+  var badge = document.getElementById("stepBadge");
+  var textEl = document.getElementById("stepText");
+  var btnPrev = document.getElementById("btnPrev");
+  var btnPlay = document.getElementById("btnPlay");
+  var btnNext = document.getElementById("btnNext");
+
+  /* ---------- 逻辑坐标 ---------- */
+  var W = 1160, H = 560;
+
+  /* ---------- 模块布局 ---------- */
+  var M = { x: 40, y: 46, w: 560, h: 468 };          // MCU 框
+  var PC = { x: 720, y: 46, w: 400, h: 468 };        // PC 框
+  var UART = { x: 650, y: 120 };                     // 通道竖线位置
+
+  var flash = { x: 66, y: 116, w: 250, h: 168 };     // Flash 应用区
+  var shellBox = { x: 80, y: 146, w: 218, h: 56 };   // Shell 任务
+  var mainBox = { x: 80, y: 216, w: 218, h: 52 };    // main() 检测
+  var bootflag = { x: 340, y: 146, w: 150, h: 96 };  // SRAM .bootflag
+  var romBox = { x: 80, y: 368, w: 300, h: 108 };    // ROM Bootloader
+  var flagNode = { x: 415, y: 344, w: 150, h: 26 };  // 小标签 flash 应用/复位
+
+  var usbBox = { x: 748, y: 150, w: 344, h: 96 };    // 串口助手
+  var progBox = { x: 748, y: 300, w: 344, h: 96 };   // CubeProgrammer
+
+  /* ---------- 步骤定义 ---------- */
+  var STEPS = [
+    { t: "MCU 正常运行，shell 等待输入（提示符 letter:/$）" },
+    { t: "串口助手输入命令 download（115200 / 8N1）" },
+    { t: "Shell 打印提示，写 shellBootFlag = 0x4C53424C 到 .bootflag 段" },
+    { t: "NVIC_SystemReset() —— 系统复位（同时清除 IWDG，狗不再咬人）" },
+    { t: "main() 启动，在最前检测到标志（HAL_Init 之前）" },
+    { t: "main 先清除标志，再调用 SystemBootloaderJump()" },
+    { t: "读取 0x1FFF0000 向量表 → 设置 MSP → 跳转 ROM Bootloader" },
+    { t: "ROM 初始化 USART2 @ PA2/PA3，死循环等待同步字节 0x7F（AN3155）" },
+    { t: "PC 执行 make download COMX=5，STM32CubeProgrammer 发送 0x7F 握手" },
+    { t: "下载 build/*.hex 写入 Flash（-v 校验）" },
+    { t: "-rst 复位：标志已清除、boot 配置未变 → 新固件正常运行" }
+  ];
+  var STEP_COUNT = STEPS.length;
+  var cur = 0, playing = false, playTimer = null;
+
+  /* ---------- 高清适配 ---------- */
+  function fit() {
+    var dpr = window.devicePixelRatio || 1;
+    var cssW = canvas.clientWidth || 1160;
+    var cssH = cssW * H / W;
+    canvas.style.height = cssH + "px";
+    canvas.width = Math.round(cssW * dpr);
+    canvas.height = Math.round(cssH * dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+  window.addEventListener("resize", fit);
+
+  /* ---------- 工具 ---------- */
+  function rr(x, y, w, h, r) {
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.arcTo(x + w, y, x + w, y + h, r);
+    ctx.arcTo(x + w, y + h, x, y + h, r);
+    ctx.arcTo(x, y + h, x, y, r);
+    ctx.arcTo(x, y, x + w, y, r);
+    ctx.closePath();
+  }
+  function box(b, opts) {
+    opts = opts || {};
+    ctx.save();
+    ctx.globalAlpha = opts.alpha != null ? opts.alpha : 1;
+    if (opts.fill) { ctx.fillStyle = opts.fill; } else { ctx.fillStyle = "rgba(30,39,64,.85)"; }
+    if (opts.glow) {
+      ctx.shadowColor = opts.glow; ctx.shadowBlur = 18;
+    }
+    rr(b.x, b.y, b.w, b.h, opts.radius || 10);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+    ctx.strokeStyle = opts.stroke || "rgba(44,58,94,1)";
+    ctx.lineWidth = opts.lw || 1.5;
+    ctx.stroke();
+    if (opts.title) {
+      ctx.fillStyle = opts.titleColor || "#9fb2e0";
+      ctx.font = "600 12px 'Segoe UI', sans-serif";
+      ctx.textAlign = "left";
+      ctx.fillText(opts.title, b.x + 12, b.y + 20);
+    }
+    ctx.restore();
+  }
+  function label(x, y, text, size, color, align, weight) {
+    ctx.fillStyle = color || "#dbe4ff";
+    ctx.font = (weight || 500) + " " + (size || 13) + "px 'Segoe UI','Microsoft YaHei',sans-serif";
+    ctx.textAlign = align || "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(text, x, y);
+  }
+  function multiLabel(b, lines, size, color) {
+    var y = b.y + b.h / 2 - (lines.length - 1) * (size + 3) / 2;
+    lines.forEach(function (ln, i) {
+      label(b.x + b.w / 2, y + i * (size + 3), ln, size, color, "center", 500);
+    });
+  }
+  /* 折线箭头 + 移动光点 */
+  function flowLine(pts, t, color, dash) {
+    ctx.save();
+    ctx.strokeStyle = color; ctx.lineWidth = 2;
+    ctx.setLineDash(dash || []);
+    ctx.beginPath();
+    pts.forEach(function (p, i) { i ? ctx.lineTo(p[0], p[1]) : ctx.moveTo(p[0], p[1]); });
+    ctx.stroke();
+    ctx.setLineDash([]);
+    /* 移动光点 */
+    var seg = 0, total = 0, lens = [];
+    for (var i = 0; i < pts.length - 1; i++) {
+      var dx = pts[i + 1][0] - pts[i][0], dy = pts[i + 1][1] - pts[i][1];
+      var L = Math.sqrt(dx * dx + dy * dy); lens.push(L); total += L;
+    }
+    var d = (t % 1) * total;
+    for (var i2 = 0; i2 < lens.length; i2++) {
+      if (d <= lens[i2]) {
+        var f = lens[i2] ? d / lens[i2] : 0;
+        var px = pts[i2][0] + (pts[i2 + 1][0] - pts[i2][0]) * f;
+        var py = pts[i2][1] + (pts[i2 + 1][1] - pts[i2][1]) * f;
+        ctx.fillStyle = color;
+        ctx.beginPath(); ctx.arc(px, py, 4, 0, 6.2832); ctx.fill();
+        break;
+      }
+      d -= lens[i2];
+    }
+    ctx.restore();
+  }
+  function arrowHead(x, y, dir, color) {
+    ctx.save();
+    ctx.fillStyle = color;
+    ctx.translate(x, y);
+    if (dir === "right") { ctx.rotate(0); }
+    else if (dir === "down") { ctx.rotate(Math.PI / 2); }
+    else if (dir === "left") { ctx.rotate(Math.PI); }
+    else if (dir === "up") { ctx.rotate(-Math.PI / 2); }
+    ctx.beginPath();
+    ctx.moveTo(0, 0); ctx.lineTo(-10, -5); ctx.lineTo(-10, 5);
+    ctx.closePath(); ctx.fill();
+    ctx.restore();
+  }
+  function flashRect(b, color, alpha) {
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.strokeStyle = color; ctx.lineWidth = 3;
+    rr(b.x - 4, b.y - 4, b.w + 8, b.h + 8, 12); ctx.stroke();
+    ctx.restore();
+  }
+
+  /* ---------- 绘制 ---------- */
+  function draw(time) {
+    var t = (time || 0) / 1000;
+    ctx.clearRect(0, 0, W, H);
+
+    /* 背景网格 */
+    ctx.save();
+    ctx.strokeStyle = "rgba(44,58,94,.18)";
+    ctx.lineWidth = 1;
+    for (var gx = 0; gx < W; gx += 40) { ctx.beginPath(); ctx.moveTo(gx, 0); ctx.lineTo(gx, H); ctx.stroke(); }
+    for (var gy = 0; gy < H; gy += 40) { ctx.beginPath(); ctx.moveTo(0, gy); ctx.lineTo(W, gy); ctx.stroke(); }
+    ctx.restore();
+
+    /* MCU 与 PC 大框 */
+    box(M, { title: "STM32WL55JC1 · MCU", fill: "rgba(17,23,38,.85)", lw: 2 });
+    box(PC, { title: "PC 主机", fill: "rgba(17,23,38,.85)", lw: 2 });
+
+    /* ---- Flash 应用区 ---- */
+    var flashColor = cur >= 0 && cur <= 5 ? "#4ade80" : "rgba(74,222,128,.35)";
+    box(flash, { title: "Flash 应用区 @ 0x08000000", fill: "rgba(74,222,128,.06)", stroke: flashColor, titleColor: "#4ade80" });
+
+    /* shell 任务框 */
+    var shellActive = cur === 2 || cur === 1;
+    box(shellBox, {
+      fill: shellActive ? "rgba(53,208,255,.12)" : "rgba(30,39,64,.7)",
+      stroke: shellActive ? "#35d0ff" : "#2c3a5e", glow: shellActive ? "#35d0ff" : null
+    });
+    multiLabel(shellBox, ["Shell 任务", "(shellTask)"], 12, shellActive ? "#35d0ff" : "#c6d2f2");
+
+    /* main 检测框 */
+    var mainActive = cur === 4 || cur === 5;
+    box(mainBox, {
+      fill: mainActive ? "rgba(53,208,255,.12)" : "rgba(30,39,64,.7)",
+      stroke: mainActive ? "#35d0ff" : "#2c3a5e", glow: mainActive ? "#35d0ff" : null
+    });
+    multiLabel(mainBox, ["main()", "检测 bootflag"], 12, mainActive ? "#35d0ff" : "#c6d2f2");
+
+    /* .bootflag */
+    var bfActive = cur === 2 || cur === 3 || cur === 4 || cur === 5;
+    box(bootflag, {
+      title: "SRAM @ 0x20...", radius: 8,
+      fill: bfActive ? "rgba(251,191,36,.12)" : "rgba(30,39,64,.7)",
+      stroke: bfActive ? "#fbbf24" : "#2c3a5e", glow: bfActive ? "#fbbf24" : null, titleColor: "#fbbf24"
+    });
+    label(bootflag.x + bootflag.w / 2, bootflag.y + 44, ".bootflag 段", 12, bfActive ? "#fbbf24" : "#c6d2f2");
+    label(bootflag.x + bootflag.w / 2, bootflag.y + 66, "NOLOAD · 复位保留", 10, bfActive ? "#fbbf24" : "#8493b8");
+    label(bootflag.x + bootflag.w / 2, bootflag.y + 84, "0x4C53424C", 11, bfActive ? "#fbbf24" : "#8493b8", "center", 700);
+
+    /* ROM 框 */
+    var romActive = cur >= 6 && cur <= 7;
+    box(romBox, {
+      title: "System Memory (ROM) @ 0x1FFF0000", radius: 12,
+      fill: romActive ? "rgba(167,139,250,.14)" : "rgba(30,39,64,.7)",
+      stroke: romActive ? "#a78bfa" : "#2c3a5e", glow: romActive ? "#a78bfa" : null, titleColor: "#a78bfa"
+    });
+    var waitTxt = cur === 7 ? ["USART2 初始化 @ PA2/PA3", "等待同步字节 0x7F ..."] : ["ROM Bootloader", "(工厂固化, 只读)"];
+    multiLabel(romBox, waitTxt, 12.5, romActive ? "#d8cdff" : "#c6d2f2");
+    if (cur === 7) {
+      /* 等待呼吸圈 */
+      var pulse = (Math.sin(t * 4) + 1) / 2;
+      ctx.save();
+      ctx.globalAlpha = .25 + pulse * .5;
+      ctx.strokeStyle = "#a78bfa";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(romBox.x + romBox.w / 2, romBox.y + romBox.h / 2 + 18, 16 + pulse * 8, 0, 6.2832);
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    /* ---- UART 通道 ---- */
+    var uartActive = cur >= 7 && cur <= 9;
+    ctx.save();
+    ctx.strokeStyle = uartActive ? "rgba(53,208,255,.9)" : "rgba(53,208,255,.3)";
+    ctx.setLineDash([6, 5]);
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    ctx.moveTo(UART.x, 160); ctx.lineTo(UART.x, 396);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.restore();
+    label(UART.x, 118, "UART 通道", 12, uartActive ? "#35d0ff" : "#5b6c94");
+    label(UART.x, 136, "PA2=TX · PA3=RX", 10, uartActive ? "#35d0ff" : "#5b6c94");
+
+    /* ---- PC 框内 ---- */
+    var usbActive = cur === 1 || cur === 8;
+    box(usbBox, {
+      title: "串口助手 / VCP (115200)", radius: 10,
+      fill: usbActive ? "rgba(53,208,255,.1)" : "rgba(30,39,64,.7)",
+      stroke: usbActive ? "#35d0ff" : "#2c3a5e", glow: usbActive ? "#35d0ff" : null, titleColor: "#9fb2e0"
+    });
+    multiLabel(usbBox, cur === 1 ? ["download ⏎"] : ["等 待 输 入"], 14, usbActive ? "#35d0ff" : "#c6d2f2");
+
+    var progActive = cur >= 8 && cur <= 9;
+    box(progBox, {
+      title: "STM32CubeProgrammer CLI", radius: 10,
+      fill: progActive ? "rgba(74,222,128,.1)" : "rgba(30,39,64,.7)",
+      stroke: progActive ? "#4ade80" : "#2c3a5e", glow: progActive ? "#4ade80" : null, titleColor: "#9fb2e0"
+    });
+    multiLabel(progBox, cur === 8 ? ["make download COMX=5", "→ 发送 0x7F ..."] : ["make download COMX=5", "(待执行)"], 12.5,
+      progActive ? "#4ade80" : "#c6d2f2");
+
+    /* ---- 内部数据流(按步骤) ---- */
+    var show = cur;
+    if (show === 1) {
+      flowLine([[usbBox.x + 20, usbBox.y + usbBox.h / 2], [UART.x, usbBox.y + usbBox.h / 2], [UART.x, 296],
+                [M.x + M.w, 296], [shellBox.x + shellBox.w, shellBox.y + shellBox.h / 2]], t, "#35d0ff");
+      arrowHead(shellBox.x + shellBox.w + 2, shellBox.y + shellBox.h / 2, "left", "#35d0ff");
+    } else if (show === 2) {
+      flowLine([[shellBox.x + shellBox.w / 2, shellBox.y + shellBox.h], [shellBox.x + shellBox.w / 2, bootflag.y + bootflag.h],
+                [bootflag.x, bootflag.y + bootflag.h / 2]], t, "#fbbf24");
+      arrowHead(bootflag.x - 2, bootflag.y + bootflag.h / 2, "left", "#fbbf24");
+    } else if (show === 3) {
+      /* 复位闪电:整个 MCU 闪红 */
+      ctx.save();
+      ctx.globalAlpha = .12 + .1 * Math.sin(t * 10);
+      ctx.strokeStyle = "#f87171"; ctx.lineWidth = 3;
+      rr(M.x - 3, M.y - 3, M.w + 6, M.h + 6, 16); ctx.stroke();
+      ctx.restore();
+      flowLine([[M.x + M.w, M.y + 20], [PC.x, PC.y + 20]], t, "#f87171", [4, 4]);
+      label((M.x + M.w + PC.x) / 2, M.y + 14, "NVIC_SystemReset()", 12, "#f87171");
+    } else if (show === 4) {
+      flashRect(mainBox, "#35d0ff", .7);
+      flowLine([[bootflag.x + bootflag.w / 2, bootflag.y + bootflag.h], [bootflag.x + bootflag.w / 2, mainBox.y],
+                [mainBox.x + mainBox.w, mainBox.y + mainBox.h / 2]], t, "#fbbf24");
+      arrowHead(mainBox.x + mainBox.w + 2, mainBox.y + mainBox.h / 2, "left", "#fbbf24");
+    } else if (show === 5) {
+      flowLine([[mainBox.x + mainBox.w / 2, mainBox.y + mainBox.h], [mainBox.x + mainBox.w / 2, romBox.y - 26],
+                [romBox.x + romBox.w, romBox.y + 26]], t, "#a78bfa");
+      arrowHead(romBox.x + romBox.w + 2, romBox.y + 26, "left", "#a78bfa");
+      label(mainBox.x + mainBox.w / 2 + 8, mainBox.y + mainBox.h + 10, "SystemBootloaderJump()", 11, "#a78bfa", "center", 700);
+    } else if (show === 6) {
+      flowLine([[mainBox.x + mainBox.w / 2, mainBox.y + mainBox.h], [mainBox.x + mainBox.w / 2, romBox.y - 26],
+                [romBox.x + romBox.w, romBox.y + 26]], t, "#a78bfa", [6, 4]);
+      arrowHead(romBox.x + romBox.w + 2, romBox.y + 26, "left", "#a78bfa");
+      label(mainBox.x + mainBox.w / 2 + 8, mainBox.y + mainBox.h + 10, "跳转 ROM @ 0x1FFF0000", 11, "#a78bfa", "center", 700);
+      /* 简化:闪 ROM */
+      flashRect(romBox, "#a78bfa", .5);
+    } else if (show === 7) {
+      flowLine([[romBox.x + romBox.w, romBox.y + 40], [UART.x, romBox.y + 40], [UART.x, 396]],
+               t, "#a78bfa", [6, 4]);
+      arrowHead(UART.x, 396, "down", "#a78bfa");
+    } else if (show === 8) {
+      flowLine([[progBox.x + 24, progBox.y + progBox.h / 2], [UART.x, progBox.y + progBox.h / 2],
+                [UART.x, 396], [UART.x, romBox.y + 40], [romBox.x + romBox.w, romBox.y + 40]], t, "#4ade80");
+      arrowHead(romBox.x + romBox.w + 2, romBox.y + 40, "left", "#4ade80");
+      label((progBox.x + romBox.x + romBox.w) / 2 + 140, progBox.y + progBox.h / 2 - 14, "0x7F 握手 → 0x79 ACK", 11, "#4ade80");
+    } else if (show === 9) {
+      /* 下载写 Flash:从 ROM/程序框到 flash 区 */
+      flowLine([[progBox.x + 24, progBox.y + progBox.h / 2], [UART.x, progBox.y + progBox.h / 2],
+                [UART.x, 296], [M.x + M.w, 296], [mainBox.x + mainBox.w, mainBox.y + mainBox.h / 2]], t, "#4ade80");
+      arrowHead(mainBox.x + mainBox.w + 2, mainBox.y + mainBox.h / 2, "left", "#4ade80");
+      flashRect(flash, "#4ade80", .6);
+      label(flash.x + flash.w / 2, flash.y - 12, "写入 0x08000000 ...", 11, "#4ade80");
+    } else if (show === 10) {
+      /* 复位运行 */
+      ctx.save();
+      ctx.globalAlpha = .1 + .08 * Math.sin(t * 10);
+      ctx.strokeStyle = "#4ade80"; ctx.lineWidth = 3;
+      rr(M.x - 3, M.y - 3, M.w + 6, M.h + 6, 16); ctx.stroke();
+      ctx.restore();
+      flashRect(shellBox, "#4ade80", .8);
+      flowLine([[romBox.x + romBox.w / 2, romBox.y], [romBox.x + romBox.w / 2, mainBox.y + mainBox.h],
+                [mainBox.x + mainBox.w / 2, mainBox.y + mainBox.h / 2]], t, "#4ade80");
+      label(M.x + M.w / 2, M.y + M.h - 8, "-rst → 新固件运行", 12, "#4ade80", "center", 700);
+    }
+
+    /* 阶段标签 */
+    ctx.save();
+    ctx.fillStyle = "rgba(159,178,224,.9)";
+    ctx.font = "600 12px 'Segoe UI',sans-serif";
+    ctx.textAlign = "left";
+    ctx.fillText("阶段 A: 应用内请求 bootloader (①-⑥)", M.x + 10, M.y + M.h + 22);
+    ctx.fillText("阶段 B: ROM 等待与下载 (⑦-⑩)", PC.x + 10, PC.y + PC.h + 22);
+    ctx.restore();
+  }
+
+  /* ---------- 播放控制 ---------- */
+  function render(now) {
+    draw(now);
+    badge.textContent = "STEP " + cur + " / " + (STEP_COUNT - 1);
+    textEl.textContent = STEPS[cur].t;
+    btnPrev.disabled = cur === 0;
+    btnNext.disabled = cur === STEP_COUNT - 1;
+  }
+  var rafId = null;
+  function tick(now) {
+    draw(now);
+    rafId = requestAnimationFrame(tick);
+  }
+  function startRenderLoop() {
+    if (!rafId) rafId = requestAnimationFrame(tick);
+  }
+
+  function go(delta) {
+    cur = Math.max(0, Math.min(STEP_COUNT - 1, cur + delta));
+    render(performance.now());
+  }
+  function autoStep() {
+    if (cur >= STEP_COUNT - 1) { pausePlay(); render(performance.now()); return; }
+    go(1);
+  }
+  function pausePlay() {
+    playing = false;
+    btnPlay.textContent = "▶ 播放";
+    btnPlay.classList.remove("primary");
+    if (playTimer) { clearTimeout(playTimer); playTimer = null; }
+  }
+  function startPlay() {
+    playing = true;
+    btnPlay.textContent = "⏸ 暂停";
+    btnPlay.classList.add("primary");
+    if (cur >= STEP_COUNT - 1) cur = 0;
+    render(performance.now());
+    playTimer = setTimeout(function loop() {
+      if (!playing) return;
+      autoStep();
+      if (playing) playTimer = setTimeout(loop, 2200);
+    }, 1200);
+  }
+
+  btnPrev.addEventListener("click", function () { pausePlay(); go(-1); });
+  btnNext.addEventListener("click", function () { pausePlay(); go(1); });
+  btnPlay.addEventListener("click", function () { playing ? pausePlay() : startPlay(); });
+
+  fit();
+  render(performance.now());
+  startRenderLoop();
+})();
+</script>
+</body>
+</html>
