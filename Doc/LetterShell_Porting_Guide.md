@@ -332,7 +332,7 @@ main(): 检测到标志
   → 清除标志
   → SystemBootloaderJump() // 跳转 ROM bootloader @ 0x1FFF0000
   → 停留在 bootloader（USART2 @ PA2/PA3，与板载 VCP 同引脚）
-PC: make download COMX=5
+PC: make download COM=5
   → STM32CubeProgrammer 通过 COM5 下载 build/*.hex → -v 校验 → -rst 复位运行新固件
 ```
 
@@ -358,12 +358,12 @@ PC: make download COMX=5
 download
 # 3. 主机执行:
 cd Makefile/CM4
-make download COMX=5        # 或 make download COMX=COM5
+make download COM=5        # 或 make download COM=COM5
 ```
 
-- `make download` 要求**必须**传 `COMX`（`5` 或 `COM5` 皆可），不传会提示用法并报错退出。
+- `make download` 要求**必须**传 `COM`（`5` 或 `COM5` 皆可），不传会提示用法并报错退出。
 - 工具路径默认 `C:/Program Files/STMicroelectronics/STM32Cube/STM32CubeProgrammer/bin`，
-  可通过 `make download COMX=5 STM32CUBEPROGRAMMER_DIR="你的路径"` 覆盖。
+  可通过 `make download COM=5 STM32CUBEPROGRAMMER_DIR="你的路径"` 覆盖。
 
 ---
 

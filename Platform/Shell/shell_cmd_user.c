@@ -59,7 +59,7 @@ SHELL_EXPORT_CMD(SHELL_CMD_PERMISSION(0) | SHELL_CMD_TYPE(SHELL_TYPE_CMD_FUNC),
  *  1. shell 打印提示，设置复位后保留的 bootflag（.bootflag 段）
  *  2. 系统复位（同时停止 IWDG，避免 bootloader 期间被看门狗复位）
  *  3. main() 检测到 bootflag 后跳转到 ROM bootloader（USART2 @ PA2/PA3）
- *  4. 主机侧执行：make download COMX=COMx 通过 STM32CubeProgrammer 下载
+ *  4. 主机侧执行：make download COM=COMx 通过 STM32CubeProgrammer 下载
  *     build/ 下的 hex 文件，-rst 复位后自动运行新固件
  */
 int shellCmdDownload(int argc, char *argv[])
@@ -68,7 +68,7 @@ int shellCmdDownload(int argc, char *argv[])
   (void)argv;
   shellPrint(shellGetCurrent(),
              "\r\nEntering ROM bootloader... "
-             "On host run: make download COMX=<COMx>\r\n");
+             "On host run: make download COM=<COMx>\r\n");
   shellBootFlag = SHELL_BOOTFLAG_MAGIC;
   NVIC_SystemReset();
   /* 理论不可达 */
