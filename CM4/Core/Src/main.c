@@ -126,6 +126,7 @@ int main(void)
   MX_I2C1_Init();
   /* USER CODE BEGIN 2 */
   BSP_LED_Init(LED_BLUE);
+  BSP_LED_Init(LED_GREEN);
   /* USER CODE END 2 */
 
   /* Init scheduler */
@@ -301,7 +302,7 @@ static void MX_IWDG_Init(void)
 
   /* USER CODE END IWDG_Init 1 */
   hiwdg.Instance = IWDG;
-  hiwdg.Init.Prescaler = IWDG_PRESCALER_4;
+  hiwdg.Init.Prescaler = IWDG_PRESCALER_128;
   hiwdg.Init.Window = 4095;
   hiwdg.Init.Reload = 4095;
   if (HAL_IWDG_Init(&hiwdg) != HAL_OK)
@@ -451,12 +452,20 @@ static void MX_GPIO_Init(void)
 void StartDefaultTask(void *argument)
 {
   /* USER CODE BEGIN 5 */
-  /* Infinite loop */
-  for(;;)
+  /* 蓝绿 LED 反相交替亮灭，间隔 3s（显式设置状态，不依赖初始电平） */
+  for (;;)
   {
-    BSP_LED_Toggle(LED_BLUE);
+    /* 阶段 A：蓝亮 + 绿灭 */
+    BSP_LED_On(LED_BLUE);
+    BSP_LED_Off(LED_GREEN);
     HAL_IWDG_Refresh(&hiwdg);
-    osDelay(100);
+    osDelay(3000);
+
+    /* 阶段 B：蓝灭 + 绿亮 */
+    BSP_LED_Off(LED_BLUE);
+    BSP_LED_On(LED_GREEN);
+    HAL_IWDG_Refresh(&hiwdg);
+    osDelay(3000);
   }
   /* USER CODE END 5 */
 }
